@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>积分兑换超市 - 家长端交互原型</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root {
+      --brand: #ff5a3d;
+      --brand-strong: #f04438;
+      --ink: #172033;
+      --muted: #8b96a8;
+      --line: #edf0f5;
+      --page: #f4f6f9;
+      --card: #ffffff;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: start center;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: #e9edf3;
+    }
+    button {
+      padding: 0;
+      border: 0;
+      background: none;
+      font: inherit;
+      color: inherit;
+      cursor: pointer;
+    }
+    .phone {
+      position: relative;
+      width: min(100vw, 425px);
+      min-height: 100vh;
+      overflow: hidden;
+      background: var(--page);
+      box-shadow: 0 18px 48px rgba(21, 30, 45, .18);
+    }
+    .status {
+      height: 38px;
+      padding: 11px 14px 0 24px;
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      font-size: 18px;
+      line-height: 1;
+      color: #0f1720;
+      background: #fff;
+    }
+    .status-right {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .signal {
+      display: inline-flex;
+      align-items: end;
+      gap: 3px;
+      height: 14px;
+    }
+    .signal i {
+      width: 5px;
+      background: #0f1720;
+      border-radius: 1px;
+    }
+    .signal i:nth-child(1) { height: 9px; }
+    .signal i:nth-child(2) { height: 11px; }
+    .signal i:nth-child(3) { height: 13px; }
+    .battery {
+      min-width: 32px;
+      height: 22px;
+      display: grid;
+      place-items: center;
+      border-radius: 7px;
+      color: #fff;
+      background: #172033;
+      font-size: 13px;
+    }
+    .nav {
+      height: 51px;
+      display: grid;
+      grid-template-columns: 54px 1fr 54px;
+      align-items: center;
+      background: #fff;
+      border-bottom: 1px solid #f1f3f6;
+    }
+    .back {
+      width: 54px;
+      height: 51px;
+      display: grid;
+      place-items: center;
+      font-size: 32px;
+      line-height: 1;
+      color: #253044;
+    }
+    .title {
+      text-align: center;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+    .banner {
+      position: relative;
+      height: 168px;
+      overflow: hidden;
+      padding: 28px 20px;
+      color: #fff;
+      background:
+        radial-gradient(circle at 87% 23%, rgba(255, 223, 103, .95) 0 42px, transparent 43px),
+        linear-gradient(145deg, #ff5c46 0%, #ff6b43 52%, #ff9d34 100%);
+    }
+    .banner::before {
+      content: "";
+      position: absolute;
+      right: -18px;
+      bottom: 6px;
+      width: 190px;
+      height: 122px;
+      border-radius: 36px 18px 24px 24px;
+      transform: rotate(-9deg);
+      background: linear-gradient(160deg, rgba(255, 236, 147, .92), rgba(255, 159, 39, .95));
+      box-shadow: -12px 14px 32px rgba(168, 75, 7, .16);
+    }
+    .banner::after {
+      content: "";
+      position: absolute;
+      right: 25px;
+      top: 40px;
+      width: 100px;
+      height: 56px;
+      border-radius: 7px;
+      transform: rotate(15deg);
+      background: rgba(255, 255, 255, .66);
+    }
+    .gift-ribbon {
+      position: absolute;
+      right: -12px;
+      bottom: 54px;
+      width: 182px;
+      height: 28px;
+      transform: rotate(16deg);
+      background: rgba(255, 222, 95, .54);
+      border-radius: 999px;
+      z-index: 1;
+    }
+    .banner-copy {
+      position: relative;
+      z-index: 2;
+      max-width: 235px;
+    }
+    .banner h1 {
+      margin: 0;
+      font-size: 34px;
+      line-height: 1.16;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+    .banner p {
+      display: inline-flex;
+      margin: 16px 0 0;
+      min-height: 32px;
+      align-items: center;
+      padding: 0 16px;
+      border-radius: 999px;
+      color: #fffdf6;
+      background: rgba(255, 207, 76, .95);
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .device-panel {
+      padding: 10px 10px 9px;
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+    }
+    .device-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .device-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #5f6b7a;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .device-count {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .device-list {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .device-list::-webkit-scrollbar { display: none; }
+    .device-chip {
+      flex: 0 0 auto;
+      max-width: 184px;
+      height: 36px;
+      padding: 0 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      border: 1px solid #e8ecf2;
+      border-radius: 8px;
+      color: #536072;
+      background: #f8fafc;
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .device-chip span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .device-chip.active {
+      color: var(--brand-strong);
+      border-color: rgba(255, 90, 61, .36);
+      background: #fff4f1;
+    }
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #aab3c0;
+    }
+    .device-chip.active .dot { background: var(--brand); }
+    .tabs {
+      height: 52px;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      align-items: stretch;
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+    }
+    .tab {
+      position: relative;
+      display: grid;
+      place-items: center;
+      min-width: 0;
+      color: #273246;
+      font-size: 15px;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+    .tab.active { color: var(--brand); }
+    .tab.active::after {
+      content: "";
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      bottom: 0;
+      height: 4px;
+      border-radius: 999px 999px 0 0;
+      background: var(--brand);
+    }
+    .content {
+      height: calc(100vh - 38px - 51px - 168px - 92px - 52px);
+      min-height: 414px;
+      overflow-y: auto;
+      padding: 8px 9px 92px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .card {
+      min-width: 0;
+      overflow: hidden;
+      border-radius: 5px;
+      background: var(--card);
+      box-shadow: 0 1px 0 rgba(16, 24, 40, .02);
+    }
+    .thumb {
+      position: relative;
+      height: 125px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(180deg, #ffffff 0%, #f7f8fa 100%);
+    }
+    .tag {
+      position: absolute;
+      top: 9px;
+      left: 10px;
+      min-width: 28px;
+      height: 18px;
+      padding: 0 5px;
+      display: grid;
+      place-items: center;
+      border-radius: 2px;
+      color: #fff;
+      background: #df1741;
+      font-size: 10px;
+      font-weight: 800;
+    }
+    .goods-art {
+      width: 108px;
+      height: 82px;
+      position: relative;
+    }
+    .clock .tile {
+      position: absolute;
+      width: 66px;
+      height: 66px;
+      border-radius: 18px;
+      background: #c6dff0;
+      border: 7px solid #d9ecf7;
+      box-shadow: 0 10px 22px rgba(78, 126, 169, .13);
+    }
+    .clock .tile:first-child {
+      left: 2px;
+      top: 2px;
+      transform: rotate(-10deg);
+      background: #c4bddf;
+      border-color: #ddd8ef;
+    }
+    .clock .tile:last-child { right: 0; bottom: 0; }
+    .pen {
+      width: 128px;
+      height: 76px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      border-radius: 6px;
+      background: #fff;
+      box-shadow: 0 12px 24px rgba(23, 32, 51, .08);
+    }
+    .pen i {
+      display: block;
+      width: 8px;
+      height: 74px;
+      border-radius: 999px;
+      transform: rotate(-8deg);
+      background: #1e2938;
+    }
+    .pen i:nth-child(2) { width: 7px; background: #e6ebf0; }
+    .pen i:nth-child(3) { width: 8px; background: #c3cad3; transform: rotate(-5deg); }
+    .pen i:nth-child(4) { width: 10px; background: #2d3747; transform: rotate(-6deg); }
+    .book {
+      width: 108px;
+      height: 78px;
+      position: relative;
+    }
+    .book::before,
+    .book::after {
+      content: "";
+      position: absolute;
+      top: 8px;
+      width: 73px;
+      height: 61px;
+      border-radius: 7px;
+      box-shadow: 0 10px 22px rgba(157, 120, 52, .12);
+    }
+    .book::before {
+      left: 1px;
+      background: #f8d795;
+    }
+    .book::after {
+      right: 0;
+      background: linear-gradient(135deg, #fff3b0, #c7f2ee 48%, #ffd3de);
+    }
+    .info {
+      padding: 9px 9px 12px;
+      background: #fff;
+    }
+    .name {
+      min-height: 21px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .meta {
+      margin-top: 8px;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      color: #8b96a8;
+      font-size: 12px;
+    }
+    .price {
+      margin-top: 6px;
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+      color: var(--brand-strong);
+      font-size: 25px;
+      line-height: 1;
+      font-weight: 500;
+    }
+    .price small {
+      color: #243045;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .empty {
+      display: none;
+      min-height: 280px;
+      place-items: center;
+      text-align: center;
+      color: #7d8898;
+      background: #fff;
+      border-radius: 6px;
+    }
+    .empty strong {
+      display: block;
+      margin-bottom: 8px;
+      color: #303a4d;
+      font-size: 16px;
+    }
+    .bottom-bar {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 10px 12px 12px;
+      background: rgba(255, 255, 255, .98);
+      border-top: 1px solid #f0f2f5;
+    }
+    .record-btn {
+      width: 100%;
+      height: 42px;
+      border-radius: 999px;
+      color: #fff;
+      background: var(--brand);
+      font-size: 17px;
+      font-weight: 800;
+    }
+    .toast {
+      position: absolute;
+      left: 50%;
+      bottom: 76px;
+      transform: translateX(-50%) translateY(12px);
+      max-width: 82%;
+      padding: 9px 13px;
+      border-radius: 999px;
+      color: #fff;
+      background: rgba(23, 32, 51, .88);
+      opacity: 0;
+      pointer-events: none;
+      transition: .22s ease;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    body:has(.sheet[open]) { overflow: hidden; }
+    .sheet::backdrop {
+      background: rgba(15, 23, 32, .36);
+    }
+    .sheet {
+      width: min(414px, calc(100% - 24px));
+      max-width: none;
+      max-height: 85vh;
+      max-height: 85dvh;
+      margin: auto;
+      padding: 0;
+      border: 0;
+      border-radius: 14px;
+      background: #fff;
+      color: var(--ink);
+      overflow: hidden;
+    }
+    .sheet[open] { display: flex; flex-direction: column; }
+    @media (max-width: 480px), (max-height: 480px) {
+      .sheet {
+        width: min(414px, 100%);
+        margin-block: auto 0;
+        border-radius: 14px 14px 0 0;
+      }
+    }
+    .sheet-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex: 0 0 auto;
+      padding: 8px 15px;
+      border-bottom: 1px solid var(--line);
+      font-size: 17px;
+      font-weight: 800;
+    }
+    .sheet-records {
+      min-height: 0;
+      overflow: auto;
+      overscroll-behavior: contain;
+      overflow-wrap: anywhere;
+      padding: 0 max(15px, env(safe-area-inset-right))
+        max(12px, env(safe-area-inset-bottom)) max(15px, env(safe-area-inset-left));
+    }
+    .close {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      color: #667085;
+      background: #f3f5f8;
+      font-size: 20px;
+      line-height: 1;
+    }
+    .record {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 0;
+      border-top: 1px solid #f0f2f5;
+    }
+    .record:first-of-type { border-top: 0; }
+    .record strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 14px;
+    }
+    .record span {
+      color: #8b96a8;
+      font-size: 12px;
+    }
+    .record em {
+      white-space: nowrap;
+      color: var(--brand-strong);
+      font-style: normal;
+      font-weight: 800;
+    }
+    @media (min-width: 426px) {
+      body { padding: 24px 0; }
+      .phone {
+        min-height: 874px;
+        max-height: 874px;
+        border-radius: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="phone">
+    <section class="status" aria-label="状态栏">
+      <span>15:19</span>
+      <div class="status-right">
+        <span class="signal"><i></i><i></i><i></i></span>
+        <span>WiFi</span>
+        <span class="battery">47</span>
+      </div>
+    </section>
+
+    <header class="nav">
+      <button class="back" type="button" aria-label="返回">‹</button>
+      <div class="title">积分兑换超市</div>
+      <div></div>
+    </header>
+
+    <section class="banner">
+      <div class="gift-ribbon"></div>
+      <div class="banner-copy">
+        <h1>积分超市</h1>
+        <p>成长积分兑换心仪好礼</p>
+      </div>
+    </section>
+
+    <section class="device-panel">
+      <div class="device-head">
+        <div class="device-label">兑换机设备</div>
+        <div class="device-count" id="deviceSummary"></div>
+      </div>
+      <div class="device-list" id="deviceList" aria-label="选择兑换机设备"></div>
+    </section>
+
+    <nav class="tabs" aria-label="商品筛选">
+      <button class="tab active" type="button" data-filter="all">全部</button>
+      <button class="tab" type="button" data-filter="popular">兑换量</button>
+      <button class="tab" type="button" data-filter="new">新上架</button>
+      <button class="tab" type="button" data-filter="low">积分从低<br>到高</button>
+      <button class="tab" type="button" data-filter="high">积分从高<br>到低</button>
+    </nav>
+
+    <section class="content">
+      <div class="grid" id="goodsGrid"></div>
+      <div class="empty" id="emptyState">
+        <div>
+          <strong>当前兑换机暂无可兑换物品</strong>
+          <span>请选择其他兑换机设备查看</span>
+        </div>
+      </div>
+    </section>
+
+    <footer class="bottom-bar">
+      <button class="record-btn" type="button" id="recordBtn">兑换记录</button>
+    </footer>
+
+    <div class="toast" id="toast"></div>
+
+    <dialog class="sheet" id="recordSheet" aria-labelledby="recordSheetTitle">
+      <div class="sheet-title">
+        <span id="recordSheetTitle">兑换记录</span>
+        <button class="close" type="button" id="closeSheet" aria-label="关闭">×</button>
+      </div>
+      <div class="sheet-records">
+        <div class="record">
+          <div><strong>中性笔替芯</strong><span>德育楼一层兑换机 · 今天 14:20</span></div>
+          <em>-200</em>
+        </div>
+        <div class="record">
+          <div><strong>LE304 闹钟</strong><span>综合楼大厅兑换机 · 昨天 16:08</span></div>
+          <em>-500</em>
+        </div>
+        <div class="record">
+          <div><strong>彩虹便签本</strong><span>图书馆入口兑换机 · 07-07 09:42</span></div>
+          <em>-120</em>
+        </div>
+      </div>
+    </dialog>
+  </main>
+
+  <script src="./market.js"></script>
+</body>
+</html>

@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#16b88a">
+  <meta name="description" content="评价管理系统积分定期存款：学校规则配置、家长主动存入与到期自动结算。">
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./original-wallet.css">
+  <title>积分定期 · 评价管理系统</title>
+</head>
+<body>
+  <div id="app"><div class="loading">正在读取积分账户…</div></div>
+  <div id="modal-root"></div>
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <template id="prd-common">
+    <section class="prd-section" aria-labelledby="prd-interest">
+      <h3 id="prd-interest" tabindex="-1">利息计算</h3>
+      <p class="prd-formula">到期利息＝本金 ×（月利率输入值 ÷ 100）× 存期月数<br>本息合计＝本金＋到期利息</p>
+      <p>月利率输入 <code>1.00</code> 表示 1%。使用月单利，不计复利，不逐日折算。中间步骤不舍入，最后一次四舍五入到 0.01 积分。</p>
+      <p>后端用精确十进制或整数计算。设 <var>P</var> 为本金乘 100、<var>R</var> 为月利率输入值乘 100、<var>M</var> 为存期月数，则利息的最小单位为
+        <code>floor((P × R × M + 5000) ÷ 10000)</code>。接口的本金、利率和结果使用十进制字符串，避免浮点误差。</p>
+      <ul>
+        <li>600.00 积分 × 1.00% × 1 个月＝6.00 积分利息，到期转入 606.00 积分。</li>
+        <li>125.50 积分按同一档位计息，原值 1.255，入账 1.26；0.01 积分按同一档位计算时，舍入后的利息为 0.00，仍返还 0.01 本金。</li>
+      </ul>
+    </section>
+    <section class="prd-section" aria-labelledby="prd-settlement">
+      <h3 id="prd-settlement" tabindex="-1">到期结算</h3>
+      <h4>起算与到期时间</h4>
+      <p>以服务端确认存入成功的北京时间为准。以存入日直接加存期月数，到期时间取目标日期 00:00（北京时间）。目标月无对应日时取月末。</p>
+      <ul>
+        <li>11 月 23 日任意时刻成功存入 1 个月，于 12 月 23 日 00:00 到期。</li>
+        <li>1 月 31 日存 1 个月于 2 月末到期，闰年为 2 月 29 日。存 2 个月直接推算到 3 月 31 日，不逐月递推。接口保存带时区的时间戳。</li>
+      </ul>
+      <h4>状态与入账</h4>
+      <ol>
+        <li><strong>存款中</strong>（<code>active</code>）表示当前时间早于到期时间。本金继续锁定，不可消费、再次存入或提前支取。</li>
+        <li><strong>待到账</strong>（<code>pending</code>）表示已达到到期时间但未完成入账，包括首次任务尚未执行或上次结算失败。</li>
+        <li>后台任务筛选到期时间已到、尚未结算且已到重试时间的订单，逐笔处理。在事务内再次确认订单未结算、账户锁定本金充足且入账金额合法。以存入时的快照为准。</li>
+        <li>同一事务扣减锁定本金、增加可用本金并记本金返还流水。随后增加可用积分、累计获得积分和累计到账利息并记利息流水。订单更新为<strong>已到账</strong>（<code>settled</code>），记录实际到账时间并写成功审计。利息为 0.00 时也完成结算。到账后不自动续存。</li>
+      </ol>
+      <h4>失败重试与防重</h4>
+      <p>任一步失败时整笔事务回滚，本金继续锁定。单独记录待到账状态、失败原因、尝试次数和下次重试时间，间隔 60 秒重试。服务恢复后重新扫描到期未结算且已到重试时间的订单。通过事务内复核订单状态和「存款单号＋流水类型」唯一约束，防止重复返还或发息。</p>
+      <p class="prd-note">演示服务每秒扫描到期订单。上线时由服务端定时任务接管调度和失败告警。到期时间是允许结算的最早时间，实际到账时间是结算记录中的时间。</p>
+    </section>
+    <section class="prd-section" aria-labelledby="prd-booking">
+      <h3 id="prd-booking">试算、存入与本金锁定</h3>
+      <ol>
+        <li>试算和确认都校验操作者为当前绑定家长、学生及档位属于本校、学校功能及档位已开启、本金达到最低起存额且不超过可用余额。积分最多两位小数，服务端校验金额范围。</li>
+        <li><code>POST /api/quote</code> 返回本金、到期时间、利率、利息、本息合计和规则版本。<code>POST /api/deposits</code> 提交学生、档位、本金、版本、到期时间及 <code>requestKey</code>。服务端按当前时间和配置重算，版本或到期日变化返回 <code>STALE_CONFIG</code>，余额不足返回 <code>INSUFFICIENT_BALANCE</code>。</li>
+        <li>确认后在同一事务中按可用余额条件扣减本金、增加锁定余额、创建订单、记锁定流水和保存请求结果。订单保存本金、存期、月利率、预计利息、到期时间、存入时间和规则版本。支持多笔独立存款。</li>
+        <li>同一操作者的相同 <code>requestKey</code> 和相同参数返回原订单，重复请求跨调息后仍可返回原结果。相同标识换参数返回 <code>IDEMPOTENCY_CONFLICT</code>。并发确认由事务及余额条件更新防止重复扣款和超额锁定。</li>
+      </ol>
+      <p>调息、修改起存额和停用只影响新单，旧单按原快照查询和结算。学校关闭存款功能后，已有存款仍按约到账。</p>
+    </section>
+    <section class="prd-section" aria-labelledby="prd-points">
+      <h3 id="prd-points">积分口径</h3>
+      <p>本金存入、到期返还只在可用积分和锁定积分之间划转。仅实际到账的利息增加可用积分、累计获得积分、得分记录和个人积分总额排名。锁定本金仍保留其原有累计获得积分贡献。本金存入和返还都不计入已兑换积分。</p>
+    </section>
+  </template>
+
+  <template id="prd-page-mobile">
+    <section class="prd-section prd-page-rules" aria-labelledby="prd-page-title">
+      <h3 id="prd-page-title" tabindex="-1">家长端 · 积分定期</h3>
+      <ul>
+        <li>根据当前选中学生读取可用积分、未结清定期本金、累计到账利息和存款。切换学生后重新查询，接口按最新家长绑定校验访问范围。</li>
+        <li>确认框展示服务端试算结果。请求超时后原样重试，规则变化时重新试算和确认。只有服务端提交成功才展示锁定结果并刷新余额。</li>
+        <li>「我的存款」按全部、存款中、待到账、已到账筛选。详情区分预计利息与实际到账时间，到账后展示本金返还和利息流水。</li>
+      </ul>
+    </section>
+  </template>
+
+  <template id="prd-page-records">
+    <section class="prd-section prd-page-rules" aria-labelledby="prd-page-title">
+      <h3 id="prd-page-title" tabindex="-1">管理端 · 存款记录</h3>
+      <h4>筛选范围与分页</h4>
+      <p><code>GET /api/deposits</code> 先限定权限，再应用已提交的筛选条件。管理员查看本校记录，班主任查看授权班级。姓名和学号由用户输入，班级由下拉选项提交，三者去掉首尾空格后按包含匹配。状态按下文映射筛选。空条件不限制该字段，多个条件同时满足才纳入。</p>
+      <p>存入日期筛选 <code>createdAt</code>，到期日期筛选 <code>dueAt</code>。分别使用北京时间的「起始日 00:00（含）至结束日次日 00:00（不含）」，只填一端则只应用该端边界。日期不存在或起始日晚于结束日时拒绝查询。</p>
+      <p>列表一笔存款一行，按存入时间倒序，同一时间按存款单号升序，每页 10 条。表头和分页显示的总数 <code>total</code> 与顶部的存款总笔数一致。顶部卡片与 Excel 取完整筛选结果，翻页只改变列表行。</p>
+
+      <h4 id="prd-stat-fields">顶部统计卡片</h4>
+      <table class="prd-field-table" aria-labelledby="prd-stat-fields">
+        <thead><tr><th scope="col">卡片</th><th scope="col">取值与计算</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">未结清本金</th><td><code>summary.locked</code>。对筛选结果中所有未结算订单的存入本金求和，包含「存款中」和「待到账」。按单据本金汇总，不读取整个学生账户的锁定余额。单位积分，保留两位小数。</td></tr>
+          <tr><th scope="row">已到账利息</th><td><code>summary.paid</code>。只对筛选结果中的「已到账」订单求和，取各订单结算时按快照入账的利息。当前实现使用已结算订单的 <code>expectedInterest</code>，该值与利息流水一致。存入和到期日期筛选仍按各自字段执行。单位积分，保留两位小数。</td></tr>
+          <tr><th scope="row">存款总笔数</th><td><code>summary.count</code>。统计筛选结果中的存款单数量。一个学生的多笔存款各计 1 笔，全部状态均可计入。</td></tr>
+          <tr><th scope="row">待到账存款</th><td><code>summary.pending</code>。统计筛选结果中到期时间小于或等于服务端查询时间且尚未完成结算的订单。首次任务未执行、结算失败等待重试都纳入。单位为笔。</td></tr>
+        </tbody>
+      </table>
+      <p>无匹配记录时，两个金额卡片均为 0.00，两个笔数卡片均为 0，列表展示空状态。</p>
+      <p class="prd-note">例：匹配到 600.00 积分存款中、125.50 积分待到账，以及 100.00 积分已到账（实际利息 1.00）各一笔。四张卡片依次为 725.50 积分、1.00 积分、3 笔、1 笔。筛选「待到账」后，依次为 125.50 积分、0.00 积分、1 笔、1 笔。</p>
+
+      <h4 id="prd-record-fields">存款记录列表字段</h4>
+      <table class="prd-field-table" aria-labelledby="prd-record-fields">
+        <thead><tr><th scope="col">列表列名</th><th scope="col">取值与展示规则</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">学生姓名</th><td><code>studentName</code>。按订单的学生 ID 关联学生档案，读取当前姓名。</td></tr>
+          <tr><th scope="row">学号</th><td><code>studentNumber</code>。取关联学生档案的学号，以文本显示和导出，保留前导零。</td></tr>
+          <tr><th scope="row">所在班级</th><td><code>className</code>。取该学生档案里的当前班级，用于筛选和班级权限限定。</td></tr>
+          <tr><th scope="row">存入本金</th><td><code>principal</code>。取订单创建时实际扣减可用积分并锁定的金额。展示积分值，固定两位小数。</td></tr>
+          <tr><th scope="row">存期</th><td><code>months</code>。取订单存入时的档位快照，以「N个月」展示。</td></tr>
+          <tr><th scope="row">月利率</th><td><code>rate</code>。取订单存入时的月利率快照，按百分数保留两位小数。存单值 <code>1.00</code> 展示为 <code>1.00%</code>。</td></tr>
+          <tr><th scope="row">存入时间</th><td><code>createdAt</code>。服务端确认存入成功时写入的时间。列表以北京时间显示 <code>YYYY-MM-DD HH:mm</code>。</td></tr>
+          <tr><th scope="row">到期时间</th><td><code>dueAt</code>。取订单的到期时间快照，按「到期结算」一节的自然月规则生成。列表以北京时间显示 <code>YYYY-MM-DD HH:mm</code>，到期时刻为 00:00。</td></tr>
+          <tr><th scope="row">到期利息</th><td><code>expectedInterest</code>。取存入时算定并存入快照的利息，按「+金额」展示，保留两位小数。待结算时为预计利息，已结算时同一数值已入账。是否入账由状态判断。</td></tr>
+          <tr><th scope="row">状态</th><td><code>status</code>。已完成结算优先显示「已到账」。其余订单在到期时间之前显示「存款中」，在到期时间及之后显示「待到账」。临界时刻按服务端时间判定，筛选、卡片和导出采用同一口径。</td></tr>
+          <tr><th scope="row">操作</th><td>「详情」以订单 ID 请求 <code>GET /api/deposits/:id</code>，重新校验学校与班级权限，读取订单快照、实际到账时间和该笔订单的关联流水。</td></tr>
+        </tbody>
+      </table>
+      <h4>详情与导出口径</h4>
+      <p>本息合计 <code>total</code> ＝存入本金＋按单据快照已舍入的到期利息。实际到账时间 <code>settledAt</code> 由结算成功事务写入，未到账时详情隐藏该时间，导出留空。导出仅限管理员，覆盖全部匹配订单，时间按北京时间精确到秒，金额与月利率用数值写入，存款单号和学号按文本保留。零条记录时禁止导出。</p>
+    </section>
+  </template>
+
+  <template id="prd-page-rules">
+    <section class="prd-section prd-page-rules" aria-labelledby="prd-page-title">
+      <h3 id="prd-page-title" tabindex="-1">管理端 · 规则配置</h3>
+      <ul>
+        <li>各校独立配置功能开关、最低起存额和存期档位。管理员可保存，班主任只读。最低起存额默认 1.00，最小 0.01 积分。启用功能时至少有一档已启用。</li>
+        <li>存期为正整数月，同一学校不得重复。已有档位不可直接改月数，需新增档位。月利率非负，最多两位小数。关闭功能或停用档位拒绝新存款。</li>
+        <li>保存配置或档位时校验当前版本并递增版本，过时版本要求刷新。试算规则版本由学校配置版本和档位版本组合。历史订单继续按快照结算。</li>
+      </ul>
+      <h4 id="prd-rule-fields">存期与月利率列表字段</h4>
+      <table class="prd-field-table" aria-labelledby="prd-rule-fields">
+        <thead><tr><th scope="col">列表列名</th><th scope="col">取值与展示规则</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">存期</th><td>读取本校档位当前配置 <code>months</code>，以「N个月」展示，列表按月数升序。</td></tr>
+          <tr><th scope="row">月利率</th><td>读取档位当前百分数 <code>rate</code>，保留两位小数后加百分号。</td></tr>
+          <tr><th scope="row">整期收益率</th><td>月利率 × 存期月数，按百分数保留两位小数。例如 1.50% × 2 个月为 3.00%。</td></tr>
+          <tr><th scope="row">1000积分到期利息</th><td>固定以 1000 为本金，代入「利息计算」公式，一次四舍五入至两位小数。上例结果为 30.00 积分。该列是档位示例，不读取存款订单。</td></tr>
+          <tr><th scope="row">状态</th><td>读取档位自己的 <code>enabled</code>，真显示「已启用」，假显示「已停用」。实际允许家长存入还须学校功能开关为开启。</td></tr>
+          <tr><th scope="row">操作</th><td>管理员点击「编辑」按档位 ID 修改月利率和状态，保存时校验档位版本。班主任显示「—」。</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </template>
+
+  <template id="prd-page-logs">
+    <section class="prd-section prd-page-rules" aria-labelledby="prd-page-title">
+      <h3 id="prd-page-title" tabindex="-1">管理端 · 操作日志</h3>
+      <ul>
+        <li>记录学校规则变更、档位新增和变更、存入成功、到期结算成功或失败及导出。后台审计保留学校、操作者、事件、时间及用于追溯的业务详情，自动结算记录的操作者为系统。</li>
+        <li><code>GET /api/logs</code> 只允许管理员查看本校审计记录，按日志编号倒序分页，每页 10 条。</li>
+        <li>审计记录用于追查配置变化和结算失败，积分余额以实际入账流水为准。失败次数、原因和下次重试时间随订单记录。</li>
+      </ul>
+      <h4 id="prd-log-fields">操作日志列表字段</h4>
+      <table class="prd-field-table" aria-labelledby="prd-log-fields">
+        <thead><tr><th scope="col">列表列名</th><th scope="col">取值与展示规则</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">序号</th><td>（当前页码 − 1）× 每页条数 ＋ 页内行号，页内行号从 1 开始。第二页第一行为 11。</td></tr>
+          <tr><th scope="row">操作时间</th><td>取审计记录 <code>created_at</code>，按北京时间显示 <code>YYYY-MM-DD HH:mm</code>。</td></tr>
+          <tr><th scope="row">操作人</th><td>取审计记录 <code>actor_id</code>。后台结算任务的 <code>settlement-worker</code> 显示「系统自动结算」，其他记录显示操作者标识。</td></tr>
+          <tr><th scope="row">操作事项</th><td>将 <code>event</code> 映射为页面名称。配置变更对应「学校规则变更」，档位新增或修改对应「新增存期档位」或「存期档位变更」，存入对应「主动存入」，结算对应「到期结算成功」或「结算失败，等待重试」，导出对应「导出存款记录」。未配置映射时显示原事件编码。</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </template>
+
+  <script src="./vendor/sql-wasm.js"></script>
+  <script src="./app.js" type="module"></script>
+</body>
+</html>
