@@ -43,7 +43,7 @@
         <li>同一事务扣减锁定本金、增加可用本金并记本金返还流水。随后增加可用积分、累计获得积分和累计到账利息并记利息流水。订单更新为<strong>已到账</strong>（<code>settled</code>），记录实际到账时间并写成功审计。利息为 0.00 时也完成结算。到账后不自动续存。</li>
       </ol>
       <h4>失败重试与防重</h4>
-      <p>任一步失败时整笔事务回滚，本金继续锁定。单独记录待到账状态、失败原因、尝试次数和下次重试时间，间隔 60 秒重试。服务恢复后重新扫描到期未结算且已到重试时间的订单。通过事务内复核订单状态和「存款单号＋流水类型」唯一约束，防止重复返还或发息。</p>
+      <p>任一步失败时整笔事务回滚，本金继续锁定。单独记录待到账状态、失败原因、尝试次数和下次重试时间，间隔 60 秒重试。服务恢复后重新扫描到期未结算且已到重试时间的订单。通过事务内复核订单状态和「原订单 ID＋流水类型」唯一约束，防止重复返还或发息。</p>
       <p class="prd-note">演示服务每秒扫描到期订单。上线时由服务端定时任务接管调度和失败告警。到期时间是允许结算的最早时间，实际到账时间是结算记录中的时间。</p>
     </section>
     <section class="prd-section" aria-labelledby="prd-booking">
@@ -51,10 +51,18 @@
       <ol>
         <li>试算和确认都校验操作者为当前绑定家长、学生及档位属于本校、学校功能及档位已开启、本金达到最低起存额且不超过可用余额。积分最多两位小数，服务端校验金额范围。</li>
         <li><code>POST /api/quote</code> 返回本金、到期时间、利率、利息、本息合计和规则版本。<code>POST /api/deposits</code> 提交学生、档位、本金、版本、到期时间及 <code>requestKey</code>。服务端按当前时间和配置重算，版本或到期日变化返回 <code>STALE_CONFIG</code>，余额不足返回 <code>INSUFFICIENT_BALANCE</code>。</li>
-        <li>确认后在同一事务中按可用余额条件扣减本金、增加锁定余额、创建订单、记锁定流水和保存请求结果。订单保存本金、存期、月利率、预计利息、到期时间、存入时间和规则版本。支持多笔独立存款。</li>
+        <li>确认后在同一事务中按可用余额条件扣减本金、增加锁定余额、分配单号、创建订单、记锁定流水和保存请求结果。订单保存本金、存期、月利率、预计利息、到期时间、存入时间和规则版本。支持多笔独立存款。</li>
         <li>同一操作者的相同 <code>requestKey</code> 和相同参数返回原订单，重复请求跨调息后仍可返回原结果。相同标识换参数返回 <code>IDEMPOTENCY_CONFLICT</code>。并发确认由事务及余额条件更新防止重复扣款和超额锁定。</li>
       </ol>
       <p>调息、修改起存额和停用只影响新单，旧单按原快照查询和结算。学校关闭存款功能后，已有存款仍按约到账。</p>
+    </section>
+    <section class="prd-section" aria-labelledby="prd-deposit-number">
+      <h3 id="prd-deposit-number">存款单号</h3>
+      <ul>
+        <li><code>depositNumber</code> 为 14 位文本，由存入时间 <code>createdAt</code> 的北京时间日期 <code>YYYYMMDD</code> 和六位流水号组成。各校每天从 <code>000001</code> 独立递增。例如某校 2026 年 11 月 23 日的第一笔为 <code>20261123000001</code>。</li>
+        <li>历史订单按各校、各存入日补号，按原存入时间升序，同一时间按原订单 ID 升序。新单接续同校当日流水。数据库保证同校单号唯一，失败事务回滚编号分配，重复确认返回原单号。用完 <code>999999</code> 后拒绝该校当天的新确认，返回 <code>DEPOSIT_SEQUENCE_EXHAUSTED</code>。</li>
+        <li>PC 和家长端详情、Excel 均显示业务单号。详情路由、请求记录和结算继续使用原订单 <code>id</code> 关联。详情按学校、授权班级或家长绑定关系校验访问权限。</li>
+      </ul>
     </section>
     <section class="prd-section" aria-labelledby="prd-points">
       <h3 id="prd-points">积分口径</h3>
@@ -162,6 +170,6 @@
   </template>
 
   <script src="./vendor/sql-wasm.js"></script>
-  <script src="./app.js?v=28549c1300c6" type="module"></script>
+  <script src="./app.js?v=f2187aa04f21" type="module"></script>
 </body>
 </html>

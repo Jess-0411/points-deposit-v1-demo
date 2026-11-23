@@ -1,4 +1,4 @@
-import { demoFetch } from './pages-api.mjs?v=95df68a6bcb3';
+import { demoFetch } from './pages-api.mjs?v=4f854db95999';
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 const money = value => Number(value || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -157,7 +157,7 @@ async function showDetail(id) {
   const d = await api(`/deposits/${encodeURIComponent(id)}`);
   const kinds = { deposit: '定期存入 · 本金锁定', principal_return: '到期本金返还', interest: '存款利息入账' };
   state.modal = { type: 'detail' };
-  modal('存款详情', `<div class="detail-hero">${badge(d.status)}<span>存入本金</span><strong>${money(d.principal)}<small>积分</small></strong></div><dl class="detail-list"><div><dt>所属学生</dt><dd>${esc(d.studentName)} · ${esc(d.className)}</dd></div><div><dt>存期 / 月利率</dt><dd>${d.months}个月 / ${d.rate}%</dd></div><div><dt>存入时间</dt><dd>${date(d.createdAt)}</dd></div><div><dt>到期时间</dt><dd>${date(d.dueAt)}</dd></div><div><dt>到期利息</dt><dd class="positive">+${money(d.expectedInterest)} 积分</dd></div><div><dt>本息合计</dt><dd>${money(d.total)} 积分</dd></div>${d.settledAt ? `<div><dt>实际到账时间</dt><dd>${date(d.settledAt)}</dd></div>` : ''}<div><dt>存款单号</dt><dd class="id-text">${esc(d.id)}</dd></div></dl><div class="inline-notice">${icon('info')}${d.status === 'settled' ? '本金和利息已自动转入可用积分；仅利息新增计入个人积分总额。' : d.status === 'pending' ? '存款已到期，系统正在处理到账，请稍后刷新查询，无需重复操作。' : '存期内不可提前取出或使用，到期日零点自动结算。'}</div><h3 class="ledger-title">积分流水</h3><div class="ledger-list">${d.ledger.map(l => `<div><span class="timeline-dot"></span><div><strong>${kinds[l.kind]}</strong><span>${date(l.createdAt)}</span></div><b>${Number(l.availableDelta) > 0 ? '+' : ''}${money(l.availableDelta)}</b></div>`).join('')}</div><footer class="modal-actions"><button class="btn primary" data-action="close-modal">关闭详情</button></footer>`, { mobile: state.view === 'mobile' });
+  modal('存款详情', `<div class="detail-hero">${badge(d.status)}<span>存入本金</span><strong>${money(d.principal)}<small>积分</small></strong></div><dl class="detail-list"><div><dt>所属学生</dt><dd>${esc(d.studentName)} · ${esc(d.className)}</dd></div><div><dt>存期 / 月利率</dt><dd>${d.months}个月 / ${d.rate}%</dd></div><div><dt>存入时间</dt><dd>${date(d.createdAt)}</dd></div><div><dt>到期时间</dt><dd>${date(d.dueAt)}</dd></div><div><dt>到期利息</dt><dd class="positive">+${money(d.expectedInterest)} 积分</dd></div><div><dt>本息合计</dt><dd>${money(d.total)} 积分</dd></div>${d.settledAt ? `<div><dt>实际到账时间</dt><dd>${date(d.settledAt)}</dd></div>` : ''}<div><dt>存款单号</dt><dd class="id-text">${esc(d.depositNumber)}</dd></div></dl><div class="inline-notice">${icon('info')}${d.status === 'settled' ? '本金和利息已自动转入可用积分；仅利息新增计入个人积分总额。' : d.status === 'pending' ? '存款已到期，系统正在处理到账，请稍后刷新查询，无需重复操作。' : '存期内不可提前取出或使用，到期日零点自动结算。'}</div><h3 class="ledger-title">积分流水</h3><div class="ledger-list">${d.ledger.map(l => `<div><span class="timeline-dot"></span><div><strong>${kinds[l.kind]}</strong><span>${date(l.createdAt)}</span></div><b>${Number(l.availableDelta) > 0 ? '+' : ''}${money(l.availableDelta)}</b></div>`).join('')}</div><footer class="modal-actions"><button class="btn primary" data-action="close-modal">关闭详情</button></footer>`, { mobile: state.view === 'mobile' });
 }
 function showConfirmation(q) {
   state.modal = { type: 'confirmation' };
@@ -207,7 +207,7 @@ async function action(button) {
       const result = await api('/deposits', { ...state.quote, requestKey: state.requestKey });
       closeModal(); state.principal = ''; state.quote = null; state.requestKey = null; state.mobileStatus = ''; state.page = 1; await load(); toast('存入成功，本金已锁定'); await showDetail(result.deposit.id);
     } catch (error) {
-      if (['STALE_CONFIG', 'DISABLED', 'INSUFFICIENT_BALANCE'].includes(error.code)) { closeModal(); state.quote = null; state.requestKey = null; await load(); toast(error.message, true); }
+      if (['STALE_CONFIG', 'DISABLED', 'INSUFFICIENT_BALANCE', 'DEPOSIT_SEQUENCE_EXHAUSTED'].includes(error.code)) { closeModal(); state.quote = null; state.requestKey = null; await load(); toast(error.message, true); }
       else {
         const errorMessage = $('#form-error');
         if (!errorMessage) throw error;

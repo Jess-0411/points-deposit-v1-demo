@@ -49,6 +49,12 @@ export class DepositService {
       CREATE TABLE IF NOT EXISTS deposits (id TEXT PRIMARY KEY, school_id TEXT NOT NULL REFERENCES settings(school_id), student_id TEXT NOT NULL REFERENCES students(id), actor_id TEXT NOT NULL, product_id TEXT NOT NULL REFERENCES products(id), months INTEGER NOT NULL, rate INTEGER NOT NULL, principal INTEGER NOT NULL CHECK(principal>0), expected_interest INTEGER NOT NULL, rule_version TEXT NOT NULL, created_at TEXT NOT NULL, due_at TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('active','pending','settled')), settled_at TEXT, attempts INTEGER NOT NULL DEFAULT 0, retry_at TEXT, last_error TEXT);
       CREATE INDEX IF NOT EXISTS deposits_due ON deposits(status,due_at);
       CREATE INDEX IF NOT EXISTS deposits_school_student ON deposits(school_id,student_id,created_at);
+      CREATE TABLE IF NOT EXISTS deposit_sequences (
+        school_id TEXT NOT NULL REFERENCES settings(school_id),
+        deposit_day TEXT NOT NULL,
+        last_number INTEGER NOT NULL CHECK(last_number BETWEEN 1 AND 999999),
+        PRIMARY KEY(school_id,deposit_day)
+      );
       CREATE TABLE IF NOT EXISTS requests (actor_id TEXT NOT NULL, request_key TEXT NOT NULL, fingerprint TEXT NOT NULL, deposit_id TEXT NOT NULL REFERENCES deposits(id), PRIMARY KEY(actor_id,request_key));
       CREATE TABLE IF NOT EXISTS ledger (id TEXT PRIMARY KEY, school_id TEXT NOT NULL, student_id TEXT NOT NULL, deposit_id TEXT, kind TEXT NOT NULL, available_delta INTEGER NOT NULL, locked_delta INTEGER NOT NULL, earned_delta INTEGER NOT NULL, balance INTEGER NOT NULL, created_at TEXT NOT NULL, UNIQUE(deposit_id,kind));
       CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, school_id TEXT NOT NULL, actor_id TEXT NOT NULL, event TEXT NOT NULL, detail TEXT NOT NULL, created_at TEXT NOT NULL);
@@ -56,10 +62,42 @@ export class DepositService {
       CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY,value TEXT NOT NULL);
       INSERT OR IGNORE INTO meta VALUES('offset','0');`);
     if (seed && !this.db.prepare('SELECT 1 FROM settings LIMIT 1').get()) this.seed();
+    this.ensureDepositNumbers();
   }
   close() { this.db.close(); }
   now() { return iso(this.clock() + Number(this.db.prepare("SELECT value FROM meta WHERE key='offset'").get().value)); }
   tx(fn) { this.db.exec('BEGIN IMMEDIATE'); try { const result = fn(); this.db.exec('COMMIT'); return result; } catch (e) { this.db.exec('ROLLBACK'); throw e; } }
+  ensureDepositNumbers() {
+    const hasColumn = () => this.db.prepare("SELECT 1 FROM pragma_table_info('deposits') WHERE name='deposit_number'").get();
+    if (hasColumn() && !this.db.prepare('SELECT 1 FROM deposits WHERE deposit_number IS NULL LIMIT 1').get()) return;
+
+    this.tx(() => {
+      if (!hasColumn()) {
+        this.db.prepare('ALTER TABLE deposits ADD COLUMN deposit_number TEXT').run();
+        this.db.prepare('CREATE UNIQUE INDEX deposits_unique_number ON deposits(deposit_number,school_id)').run();
+      }
+      const history = this.db.prepare(`
+        SELECT id,school_id,created_at FROM deposits WHERE deposit_number IS NULL
+        ORDER BY school_id,created_at,id
+      `).all();
+      const update = this.db.prepare('UPDATE deposits SET deposit_number=? WHERE id=?');
+      for (const deposit of history) {
+        update.run(this.allocateDepositNumber(deposit.school_id, deposit.created_at), deposit.id);
+      }
+    });
+  }
+  allocateDepositNumber(schoolId, createdAt) {
+    const day = localDate(createdAt).replaceAll('-', '');
+    const advanced = this.db.prepare(`
+      INSERT INTO deposit_sequences(school_id,deposit_day,last_number) VALUES(?,?,1)
+      ON CONFLICT(school_id,deposit_day) DO UPDATE SET last_number=last_number+1 WHERE last_number<999999
+    `).run(schoolId, day);
+    if (!advanced.changes) fail('当天存款单号已用完，请次日再试', 409, 'DEPOSIT_SEQUENCE_EXHAUSTED');
+    const { last_number: sequence } = this.db.prepare(
+      'SELECT last_number FROM deposit_sequences WHERE school_id=? AND deposit_day=?',
+    ).get(schoolId, day);
+    return day + String(sequence).padStart(6, '0');
+  }
   audit(actor, event, detail) { this.db.prepare('INSERT INTO audit(school_id,actor_id,event,detail,created_at) VALUES(?,?,?,?,?)').run(actor.schoolId, actor.id, event, JSON.stringify(detail), this.now()); }
   emit(actor, event, detail = {}) { this.db.prepare('INSERT INTO events(school_id,actor_id,event,detail,created_at) VALUES(?,?,?,?,?)').run(actor.schoolId, actor.id, event, JSON.stringify(detail), this.now()); }
   admin(actor) { if (actor.role !== 'admin') fail('无规则配置或管理操作权限', 403, 'FORBIDDEN'); }
@@ -160,7 +198,8 @@ export class DepositService {
       const id = randomUUID(), principal = units(quote.principal), expected = units(quote.expectedInterest);
       const changed = this.db.prepare('UPDATE students SET available=available-?,locked=locked+? WHERE id=? AND available>=?').run(principal, principal, data.studentId, principal);
       if (!changed.changes) fail('可用积分不足', 409, 'INSUFFICIENT_BALANCE');
-      this.db.prepare("INSERT INTO deposits(id,school_id,student_id,actor_id,product_id,months,rate,principal,expected_interest,rule_version,created_at,due_at,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'active')").run(id, actor.schoolId, data.studentId, actor.id, quote.productId, quote.months, units(quote.rate), principal, expected, quote.ruleVersion, quote.quotedAt, quote.dueAt);
+      const depositNumber = this.allocateDepositNumber(actor.schoolId, quote.quotedAt);
+      this.db.prepare("INSERT INTO deposits(id,school_id,student_id,actor_id,product_id,months,rate,principal,expected_interest,rule_version,created_at,due_at,status,deposit_number) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'active',?)").run(id, actor.schoolId, data.studentId, actor.id, quote.productId, quote.months, units(quote.rate), principal, expected, quote.ruleVersion, quote.quotedAt, quote.dueAt, depositNumber);
       this.ledger(data.studentId, id, 'deposit', -principal, principal, 0);
       this.db.prepare('INSERT INTO requests VALUES(?,?,?,?)').run(actor.id, data.requestKey, hash, id);
       this.audit(actor, 'deposit_created', { depositId: id, studentId: data.studentId, principal, ruleVersion: quote.ruleVersion });
@@ -206,7 +245,7 @@ export class DepositService {
     return results;
   }
   decorate(row, now = this.now()) {
-    return { id: row.id, studentId: row.student_id, studentName: row.name, studentNumber: row.number, className: row.class_name, actorId: row.actor_id, principal: amount(row.principal), months: row.months, rate: amount(row.rate), expectedInterest: amount(row.expected_interest), total: amount(row.principal + row.expected_interest), ruleVersion: row.rule_version, createdAt: row.created_at, dueAt: row.due_at, settledAt: row.settled_at, status: row.status === 'active' && row.due_at <= now ? 'pending' : row.status, attempts: row.attempts, lastError: row.last_error };
+    return { id: row.id, depositNumber: row.deposit_number, studentId: row.student_id, studentName: row.name, studentNumber: row.number, className: row.class_name, actorId: row.actor_id, principal: amount(row.principal), months: row.months, rate: amount(row.rate), expectedInterest: amount(row.expected_interest), total: amount(row.principal + row.expected_interest), ruleVersion: row.rule_version, createdAt: row.created_at, dueAt: row.due_at, settledAt: row.settled_at, status: row.status === 'active' && row.due_at <= now ? 'pending' : row.status, attempts: row.attempts, lastError: row.last_error };
   }
   detail(actor, id) {
     const row = this.db.prepare('SELECT d.*,s.name,s.number,s.class_name FROM deposits d JOIN students s ON s.id=d.student_id WHERE d.id=? AND d.school_id=?').get(id, actor.schoolId);
@@ -248,7 +287,7 @@ export class DepositService {
       ${deposits} WHERE ${scope}
     `).get(now, ...scopeArgs);
     const total = where === scope ? summary.count : this.db.prepare(`SELECT COUNT(*) count ${deposits} WHERE ${where}`).get(...args).count;
-    const rows = this.db.prepare(`SELECT d.*,s.name,s.number,s.class_name ${deposits} WHERE ${where} ORDER BY d.created_at DESC,d.id ${all ? '' : 'LIMIT ? OFFSET ?'}`).all(...args, ...(all ? [] : [pageSize, (page - 1) * pageSize]));
+    const rows = this.db.prepare(`SELECT d.*,s.name,s.number,s.class_name ${deposits} WHERE ${where} ORDER BY d.created_at DESC,d.deposit_number ${all ? '' : 'LIMIT ? OFFSET ?'}`).all(...args, ...(all ? [] : [pageSize, (page - 1) * pageSize]));
     return { items: rows.map(row => this.decorate(row, now)), total, page, pageSize, summary: { count: summary.count, locked: amount(summary.locked), paid: amount(summary.paid), pending: summary.pending } };
   }
   logs(actor, filters = {}) {

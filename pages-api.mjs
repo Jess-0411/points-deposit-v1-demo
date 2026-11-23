@@ -1,4 +1,4 @@
-import { BusinessError, DEMO_PROFILES, DepositService } from './core.mjs?v=b1ed12151f74';
+import { BusinessError, DEMO_PROFILES, DepositService } from './core.mjs?v=cbed03940de9';
 import { workbook } from './xlsx.mjs?v=0d41d146a464';
 
 const storageKey = 'yyide.points-deposit-v1.sqlite';
@@ -68,7 +68,7 @@ function downloadWorkbook(service, actor, filters) {
   const date = iso => iso ? new Date(Date.parse(iso) + 28_800_000).toISOString().replace('T', ' ').slice(0, 19) : '';
   const columns = ['学生姓名', '学号', '班级', '存款单号', '本金（积分）', '存期（月）', '月利率（%）', '存入时间（北京时间）', '到期时间（北京时间）', '到期利息（积分）', '本息合计（积分）', '状态', '实际到账时间（北京时间）'];
   const rows = result.items.map(deposit => [
-    deposit.studentName, deposit.studentNumber, deposit.className, deposit.id, Number(deposit.principal),
+    deposit.studentName, deposit.studentNumber, deposit.className, deposit.depositNumber, Number(deposit.principal),
     deposit.months, Number(deposit.rate), date(deposit.createdAt), date(deposit.dueAt),
     Number(deposit.expectedInterest), Number(deposit.total), labels[deposit.status], date(deposit.settledAt),
   ]);
