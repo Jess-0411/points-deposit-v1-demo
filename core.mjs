@@ -205,8 +205,8 @@ export class DepositService {
     }
     return results;
   }
-  decorate(row) {
-    return { id: row.id, studentId: row.student_id, studentName: row.name, studentNumber: row.number, className: row.class_name, actorId: row.actor_id, principal: amount(row.principal), months: row.months, rate: amount(row.rate), expectedInterest: amount(row.expected_interest), total: amount(row.principal + row.expected_interest), ruleVersion: row.rule_version, createdAt: row.created_at, dueAt: row.due_at, settledAt: row.settled_at, status: row.status === 'active' && row.due_at <= this.now() ? 'pending' : row.status, attempts: row.attempts, lastError: row.last_error };
+  decorate(row, now = this.now()) {
+    return { id: row.id, studentId: row.student_id, studentName: row.name, studentNumber: row.number, className: row.class_name, actorId: row.actor_id, principal: amount(row.principal), months: row.months, rate: amount(row.rate), expectedInterest: amount(row.expected_interest), total: amount(row.principal + row.expected_interest), ruleVersion: row.rule_version, createdAt: row.created_at, dueAt: row.due_at, settledAt: row.settled_at, status: row.status === 'active' && row.due_at <= now ? 'pending' : row.status, attempts: row.attempts, lastError: row.last_error };
   }
   detail(actor, id) {
     const row = this.db.prepare('SELECT d.*,s.name,s.number,s.class_name FROM deposits d JOIN students s ON s.id=d.student_id WHERE d.id=? AND d.school_id=?').get(id, actor.schoolId);
@@ -216,7 +216,9 @@ export class DepositService {
     return { ...this.decorate(row), ledger };
   }
   list(actor, filters = {}, { all = false } = {}) {
-    const { sql, args } = this.scope(actor); let where = sql;
+    const { sql: scope, args: scopeArgs } = this.scope(actor);
+    const args = [...scopeArgs];
+    let where = scope;
     if (filters.studentId) { this.student(actor, filters.studentId); where += ' AND s.id=?'; args.push(filters.studentId); }
     for (const [key, column] of [['name', 's.name'], ['number', 's.number'], ['className', 's.class_name']]) {
       if (filters[key]?.trim()) { where += ` AND instr(${column},?)>0`; args.push(filters[key].trim()); }
@@ -231,14 +233,23 @@ export class DepositService {
       if (filters[endKey]) { where += ` AND ${column}<?`; args.push(iso(Date.parse(`${filters[endKey]}T00:00:00+08:00`) + 86_400_000)); }
     }
     if (filters.status && !['active', 'pending', 'settled'].includes(filters.status)) fail('存款状态无效');
-    if (filters.status === 'active') { where += " AND d.status='active' AND d.due_at>?"; args.push(this.now()); }
-    if (filters.status === 'pending') { where += " AND d.status<>'settled' AND d.due_at<=?"; args.push(this.now()); }
+    const now = this.now();
+    if (filters.status === 'active') { where += " AND d.status='active' AND d.due_at>?"; args.push(now); }
+    if (filters.status === 'pending') { where += " AND d.status<>'settled' AND d.due_at<=?"; args.push(now); }
     if (filters.status === 'settled') where += " AND d.status='settled'";
-    const summary = this.db.prepare(`SELECT COUNT(*) count,COALESCE(SUM(CASE WHEN d.status<>'settled' THEN d.principal ELSE 0 END),0) locked,COALESCE(SUM(CASE WHEN d.status='settled' THEN d.expected_interest ELSE 0 END),0) paid,COALESCE(SUM(CASE WHEN d.status<>'settled' AND d.due_at<=? THEN 1 ELSE 0 END),0) pending FROM deposits d JOIN students s ON s.id=d.student_id WHERE ${where}`).get(this.now(), ...args);
     const page = filters.page === undefined || filters.page === '' ? 1 : Number(filters.page), pageSize = 10;
     if (!Number.isSafeInteger(page) || page < 1 || page > 1_000_000) fail('分页参数无效');
-    const rows = this.db.prepare(`SELECT d.*,s.name,s.number,s.class_name FROM deposits d JOIN students s ON s.id=d.student_id WHERE ${where} ORDER BY d.created_at DESC,d.id ${all ? '' : 'LIMIT ? OFFSET ?'}`).all(...args, ...(all ? [] : [pageSize, (page - 1) * pageSize]));
-    return { items: rows.map(r => this.decorate(r)), total: summary.count, page, pageSize, summary: { count: summary.count, locked: amount(summary.locked), paid: amount(summary.paid), pending: summary.pending } };
+    const deposits = 'FROM deposits d JOIN students s ON s.id=d.student_id';
+    const summary = this.db.prepare(`
+      SELECT COUNT(*) count,
+        COALESCE(SUM(CASE WHEN d.status<>'settled' THEN d.principal ELSE 0 END),0) locked,
+        COALESCE(SUM(CASE WHEN d.status='settled' THEN d.expected_interest ELSE 0 END),0) paid,
+        COALESCE(SUM(CASE WHEN d.status<>'settled' AND d.due_at<=? THEN 1 ELSE 0 END),0) pending
+      ${deposits} WHERE ${scope}
+    `).get(now, ...scopeArgs);
+    const total = where === scope ? summary.count : this.db.prepare(`SELECT COUNT(*) count ${deposits} WHERE ${where}`).get(...args).count;
+    const rows = this.db.prepare(`SELECT d.*,s.name,s.number,s.class_name ${deposits} WHERE ${where} ORDER BY d.created_at DESC,d.id ${all ? '' : 'LIMIT ? OFFSET ?'}`).all(...args, ...(all ? [] : [pageSize, (page - 1) * pageSize]));
+    return { items: rows.map(row => this.decorate(row, now)), total, page, pageSize, summary: { count: summary.count, locked: amount(summary.locked), paid: amount(summary.paid), pending: summary.pending } };
   }
   logs(actor, filters = {}) {
     if (actor.role === 'parent') fail('无管理日志权限', 403, 'FORBIDDEN');

@@ -79,20 +79,21 @@
       <h4>筛选范围与分页</h4>
       <p><code>GET /api/deposits</code> 先限定权限，再应用已提交的筛选条件。管理员查看本校记录，班主任查看授权班级。姓名和学号由用户输入，班级由下拉选项提交，三者去掉首尾空格后按包含匹配。状态按下文映射筛选。空条件不限制该字段，多个条件同时满足才纳入。</p>
       <p>存入日期筛选 <code>createdAt</code>，到期日期筛选 <code>dueAt</code>。分别使用北京时间的「起始日 00:00（含）至结束日次日 00:00（不含）」，只填一端则只应用该端边界。日期不存在或起始日晚于结束日时拒绝查询。</p>
-      <p>列表一笔存款一行，按存入时间倒序，同一时间按存款单号升序，每页 10 条。表头和分页显示的总数 <code>total</code> 与顶部的存款总笔数一致。顶部卡片与 Excel 取完整筛选结果，翻页只改变列表行。</p>
+      <p>列表一笔存款一行，按存入时间倒序，同一时间按存款单号升序，每页 10 条。<code>total</code> 为筛选后全部记录的笔数，用于列表和分页。Excel 导出使用同一筛选条件，包含所有匹配记录。</p>
 
       <h4 id="prd-stat-fields">顶部统计卡片</h4>
+      <p><code>summary</code> 按当前账号可查看的全部存款汇总。管理员汇总本校，班主任汇总授权班级。列表筛选、重置和分页均不改变统计范围。</p>
       <table class="prd-field-table" aria-labelledby="prd-stat-fields">
         <thead><tr><th scope="col">卡片</th><th scope="col">取值与计算</th></tr></thead>
         <tbody>
-          <tr><th scope="row">未结清本金</th><td><code>summary.locked</code>。对筛选结果中所有未结算订单的存入本金求和，包含「存款中」和「待到账」。按单据本金汇总，不读取整个学生账户的锁定余额。单位积分，保留两位小数。</td></tr>
-          <tr><th scope="row">已到账利息</th><td><code>summary.paid</code>。只对筛选结果中的「已到账」订单求和，取各订单结算时按快照入账的利息。当前实现使用已结算订单的 <code>expectedInterest</code>，该值与利息流水一致。存入和到期日期筛选仍按各自字段执行。单位积分，保留两位小数。</td></tr>
-          <tr><th scope="row">存款总笔数</th><td><code>summary.count</code>。统计筛选结果中的存款单数量。一个学生的多笔存款各计 1 笔，全部状态均可计入。</td></tr>
-          <tr><th scope="row">待到账存款</th><td><code>summary.pending</code>。统计筛选结果中到期时间小于或等于服务端查询时间且尚未完成结算的订单。首次任务未执行、结算失败等待重试都纳入。单位为笔。</td></tr>
+          <tr><th scope="row">未结清本金</th><td><code>summary.locked</code>。汇总权限范围内「存款中」和「待到账」订单的存入本金。单位积分，保留两位小数。</td></tr>
+          <tr><th scope="row">已到账利息</th><td><code>summary.paid</code>。汇总权限范围内「已到账」订单的实际利息。取已结算订单按快照保存的 <code>expectedInterest</code>，该值与利息流水一致。单位积分，保留两位小数。</td></tr>
+          <tr><th scope="row">存款总笔数</th><td><code>summary.count</code>。计数权限范围内全部状态的存款单，一个学生的多笔存款各计 1 笔。</td></tr>
+          <tr><th scope="row">待到账存款</th><td><code>summary.pending</code>。计数权限范围内已到期且尚未完成结算的订单，包含首次结算尚未执行和失败等待重试的订单。</td></tr>
         </tbody>
       </table>
       <p>无匹配记录时，两个金额卡片均为 0.00，两个笔数卡片均为 0，列表展示空状态。</p>
-      <p class="prd-note">例：匹配到 600.00 积分存款中、125.50 积分待到账，以及 100.00 积分已到账（实际利息 1.00）各一笔。四张卡片依次为 725.50 积分、1.00 积分、3 笔、1 笔。筛选「待到账」后，依次为 125.50 积分、0.00 积分、1 笔、1 笔。</p>
+      <p class="prd-note">例：权限范围内有 600.00 积分存款中、125.50 积分待到账，以及 100.00 积分已到账（实际利息 1.00）各一笔。四张卡片依次为 725.50 积分、1.00 积分、3 笔、1 笔。筛选「待到账」后，列表和导出仅含 125.50 积分的记录，顶部仍显示这四项汇总。</p>
 
       <h4 id="prd-record-fields">存款记录列表字段</h4>
       <table class="prd-field-table" aria-labelledby="prd-record-fields">
