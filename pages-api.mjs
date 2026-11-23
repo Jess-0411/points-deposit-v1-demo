@@ -1,5 +1,5 @@
-import { BusinessError, DEMO_PROFILES, DepositService } from './core.mjs';
-import { workbook } from './xlsx.mjs';
+import { BusinessError, DEMO_PROFILES, DepositService } from './core.mjs?v=b1ed12151f74';
+import { workbook } from './xlsx.mjs?v=0d41d146a464';
 
 const storageKey = 'yyide.points-deposit-v1.sqlite';
 const profileKey = 'yyide.points-deposit-v1.profile';
