@@ -4,11 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#16b88a">
-  <meta name="description" content="评价管理系统积分定期存款：学校规则配置、家长主动存入与到期自动结算。">
+  <meta name="description" content="评价管理系统校园银行，支持学校规则配置、家长主动存入与到期自动结算。">
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./styles.css">
   <link rel="stylesheet" href="./original-wallet.css">
-  <title>积分定期 · 评价管理系统</title>
+  <title>校园银行 · 评价管理系统</title>
 </head>
 <body>
   <div id="app"><div class="loading">正在读取积分账户…</div></div>
@@ -64,7 +64,7 @@
 
   <template id="prd-page-mobile">
     <section class="prd-section prd-page-rules" aria-labelledby="prd-page-title">
-      <h3 id="prd-page-title" tabindex="-1">家长端 · 积分定期</h3>
+      <h3 id="prd-page-title" tabindex="-1">家长端 · 校园银行</h3>
       <ul>
         <li>根据当前选中学生读取可用积分、未结清定期本金、累计到账利息和存款。切换学生后重新查询，接口按最新家长绑定校验访问范围。</li>
         <li>确认框展示服务端试算结果。请求超时后原样重试，规则变化时重新试算和确认。只有服务端提交成功才展示锁定结果并刷新余额。</li>
@@ -75,7 +75,7 @@
 
   <template id="prd-page-records">
     <section class="prd-section prd-page-rules" aria-labelledby="prd-page-title">
-      <h3 id="prd-page-title" tabindex="-1">管理端 · 存款记录</h3>
+      <h3 id="prd-page-title" tabindex="-1">校园银行 · 存款记录</h3>
       <h4>筛选范围与分页</h4>
       <p><code>GET /api/deposits</code> 先限定权限，再应用已提交的筛选条件。管理员查看本校记录，班主任查看授权班级。姓名和学号由用户输入，班级由下拉选项提交，三者去掉首尾空格后按包含匹配。状态按下文映射筛选。空条件不限制该字段，多个条件同时满足才纳入。</p>
       <p>存入日期筛选 <code>createdAt</code>，到期日期筛选 <code>dueAt</code>。分别使用北京时间的「起始日 00:00（含）至结束日次日 00:00（不含）」，只填一端则只应用该端边界。日期不存在或起始日晚于结束日时拒绝查询。</p>
@@ -118,7 +118,7 @@
 
   <template id="prd-page-rules">
     <section class="prd-section prd-page-rules" aria-labelledby="prd-page-title">
-      <h3 id="prd-page-title" tabindex="-1">管理端 · 规则配置</h3>
+      <h3 id="prd-page-title" tabindex="-1">校园银行 · 规则配置</h3>
       <ul>
         <li>各校独立配置功能开关、最低起存额和存期档位。管理员可保存，班主任只读。最低起存额默认 1.00，最小 0.01 积分。启用功能时至少有一档已启用。</li>
         <li>存期为正整数月，同一学校不得重复。已有档位不可直接改月数，需新增档位。月利率非负，最多两位小数。关闭功能或停用档位拒绝新存款。</li>
@@ -141,7 +141,7 @@
 
   <template id="prd-page-logs">
     <section class="prd-section prd-page-rules" aria-labelledby="prd-page-title">
-      <h3 id="prd-page-title" tabindex="-1">管理端 · 操作日志</h3>
+      <h3 id="prd-page-title" tabindex="-1">校园银行 · 操作日志</h3>
       <ul>
         <li>记录学校规则变更、档位新增和变更、存入成功、到期结算成功或失败及导出。后台审计保留学校、操作者、事件、时间及用于追溯的业务详情，自动结算记录的操作者为系统。</li>
         <li><code>GET /api/logs</code> 只允许管理员查看本校审计记录，按日志编号倒序分页，每页 10 条。</li>

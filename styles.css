@@ -169,3 +169,15 @@
 .prd-field-table thead th {
   background: #edf8f2;
 }
+
+.nav-group.current,
+.nav-group.current .icon {
+  color: var(--green-dark);
+}
+
+.nav-group.current {
+  background: #e7f7f1;
+  border-radius: 8px;
+  font-weight: 600;
+  text-decoration: none;
+}
