@@ -1,4 +1,4 @@
-import { demoFetch } from './pages-api.mjs?v=4f854db95999';
+import { demoFetch } from './pages-api.mjs?v=6347d12ed205';
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 const money = value => Number(value || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

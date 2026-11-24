@@ -42,7 +42,7 @@ export class DepositService {
   constructor(filename = ':memory:', { clock = () => Date.now(), seed = true, DatabaseSync } = {}) {
     this.clock = clock;
     this.db = new DatabaseSync(filename);
-    this.db.exec(`PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
+    this.db.exec(`PRAGMA foreign_keys=ON; PRAGMA journal_mode=MEMORY; PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS settings (school_id TEXT PRIMARY KEY, name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 0, minimum INTEGER NOT NULL DEFAULT 100 CHECK(minimum>0), version INTEGER NOT NULL DEFAULT 1);
       CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, school_id TEXT NOT NULL REFERENCES settings(school_id), months INTEGER NOT NULL CHECK(months>0), rate INTEGER NOT NULL CHECK(rate>=0), enabled INTEGER NOT NULL DEFAULT 0, revision INTEGER NOT NULL DEFAULT 1, UNIQUE(school_id,months));
       CREATE TABLE IF NOT EXISTS students (id TEXT PRIMARY KEY, school_id TEXT NOT NULL REFERENCES settings(school_id), number TEXT NOT NULL, name TEXT NOT NULL, class_name TEXT NOT NULL, available INTEGER NOT NULL CHECK(available>=0), locked INTEGER NOT NULL DEFAULT 0 CHECK(locked>=0), earned INTEGER NOT NULL, interest_paid INTEGER NOT NULL DEFAULT 0);

@@ -1,4 +1,4 @@
-import { BusinessError, DEMO_PROFILES, DepositService } from './core.mjs?v=cbed03940de9';
+import { BusinessError, DEMO_PROFILES, DepositService } from './core.mjs?v=2ea9e2ca069c';
 import { workbook } from './xlsx.mjs?v=0d41d146a464';
 
 const storageKey = 'yyide.points-deposit-v1.sqlite';
