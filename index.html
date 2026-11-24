@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#16b88a">
   <meta name="description" content="评价管理系统校园银行，支持学校规则配置、家长主动存入与到期自动结算。">
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./styles.css?v=b4d40d584e14">
+  <link rel="stylesheet" href="./styles.css?v=7c68291cc35f">
   <link rel="stylesheet" href="./original-wallet.css?v=e39c1d0c3969">
   <title>校园银行 · 评价管理系统</title>
 </head>
@@ -96,11 +96,10 @@
           <tr><th scope="row">未结清本金</th><td><code>summary.locked</code>。汇总权限范围内「存款中」订单的存入本金，包含已经到期但尚未结算的订单。单位积分，保留两位小数。</td></tr>
           <tr><th scope="row">已到账利息</th><td><code>summary.paid</code>。汇总权限范围内「已到账」订单的实际利息。取已结算订单按快照保存的 <code>expectedInterest</code>，该值与利息流水一致。单位积分，保留两位小数。</td></tr>
           <tr><th scope="row">存款总笔数</th><td><code>summary.count</code>。计数权限范围内全部状态的存款单，一个学生的多笔存款各计 1 笔。</td></tr>
-          <tr><th scope="row">已到期未结算</th><td><code>summary.pending</code>。计数权限范围内「存款中」且到期时间小于或等于查询时间的订单，包含首次结算尚未执行和失败等待重试的订单。</td></tr>
         </tbody>
       </table>
-      <p>权限范围内无存款时，两个金额卡片均为 0.00，两个笔数卡片均为 0。筛选无匹配记录时，列表展示空状态。</p>
-      <p class="prd-note">例：权限范围内有 600.00 积分未到期、125.50 积分已到期未结算，以及 100.00 积分已到账（实际利息 1.00）各一笔。四张卡片依次为 725.50 积分、1.00 积分、3 笔、1 笔。筛选「存款中」后，列表和导出包含前两笔，顶部按权限范围汇总。</p>
+      <p>权限范围内无存款时，两项金额均为 0.00，存款总笔数为 0。筛选无匹配记录时，列表展示空状态。</p>
+      <p class="prd-note">例：权限范围内有 600.00 积分未到期、125.50 积分已到期但尚未结算，以及 100.00 积分已到账（实际利息 1.00）各一笔。三项统计依次为 725.50 积分、1.00 积分、3 笔。筛选「存款中」后，列表和导出包含前两笔，顶部按权限范围汇总。</p>
 
       <h4 id="prd-record-fields">存款记录列表字段</h4>
       <table class="prd-field-table" aria-labelledby="prd-record-fields">
@@ -148,6 +147,6 @@
   </template>
 
   <script src="./vendor/sql-wasm.js"></script>
-  <script src="./app.js?v=06eea7151567" type="module"></script>
+  <script src="./app.js?v=9a2388d1a409" type="module"></script>
 </body>
 </html>
