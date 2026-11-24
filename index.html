@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#16b88a">
   <meta name="description" content="评价管理系统校园银行，支持学校规则配置、家长主动存入与到期自动结算。">
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./styles.css?v=6ba647aaec1e">
+  <link rel="stylesheet" href="./styles.css?v=5b782219d74f">
   <link rel="stylesheet" href="./original-wallet.css?v=e39c1d0c3969">
   <title>校园银行 · 评价管理系统</title>
 </head>
@@ -148,28 +148,7 @@
     </section>
   </template>
 
-  <template id="prd-page-logs">
-    <section class="prd-section prd-page-rules" aria-labelledby="prd-page-title">
-      <h3 id="prd-page-title" tabindex="-1">校园银行 · 操作日志</h3>
-      <ul>
-        <li>记录学校规则变更、档位新增和变更、存入成功、到期结算成功或失败及导出。后台审计保留学校、操作者、事件、时间及用于追溯的业务详情，自动结算记录的操作者为系统。</li>
-        <li><code>GET /api/logs</code> 只允许管理员查看本校审计记录，按日志编号倒序分页，每页 10 条。</li>
-        <li>审计记录用于追查配置变化和结算失败，积分余额以实际入账流水为准。失败次数、原因和下次重试时间随订单记录。</li>
-      </ul>
-      <h4 id="prd-log-fields">操作日志列表字段</h4>
-      <table class="prd-field-table" aria-labelledby="prd-log-fields">
-        <thead><tr><th scope="col">列表列名</th><th scope="col">取值与展示规则</th></tr></thead>
-        <tbody>
-          <tr><th scope="row">序号</th><td>（当前页码 − 1）× 每页条数 ＋ 页内行号，页内行号从 1 开始。第二页第一行为 11。</td></tr>
-          <tr><th scope="row">操作时间</th><td>取审计记录 <code>created_at</code>，按北京时间显示 <code>YYYY-MM-DD HH:mm</code>。</td></tr>
-          <tr><th scope="row">操作人</th><td>取审计记录 <code>actor_id</code>。后台结算任务的 <code>settlement-worker</code> 显示「系统自动结算」，其他记录显示操作者标识。</td></tr>
-          <tr><th scope="row">操作事项</th><td>将 <code>event</code> 映射为页面名称。配置变更对应「学校规则变更」，档位新增或修改对应「新增存期档位」或「存期档位变更」，存入对应「主动存入」，结算对应「到期结算成功」或「结算失败，等待重试」，导出对应「导出存款记录」。未配置映射时显示原事件编码。</td></tr>
-        </tbody>
-      </table>
-    </section>
-  </template>
-
   <script src="./vendor/sql-wasm.js"></script>
-  <script src="./app.js?v=1999f8753584" type="module"></script>
+  <script src="./app.js?v=566ae72b42de" type="module"></script>
 </body>
 </html>
