@@ -245,7 +245,8 @@ export class DepositService {
     return results;
   }
   decorate(row, now = this.now()) {
-    return { id: row.id, depositNumber: row.deposit_number, studentId: row.student_id, studentName: row.name, studentNumber: row.number, className: row.class_name, actorId: row.actor_id, principal: amount(row.principal), months: row.months, rate: amount(row.rate), expectedInterest: amount(row.expected_interest), total: amount(row.principal + row.expected_interest), ruleVersion: row.rule_version, createdAt: row.created_at, dueAt: row.due_at, settledAt: row.settled_at, status: row.status === 'active' && row.due_at <= now ? 'pending' : row.status, attempts: row.attempts, lastError: row.last_error };
+    const settled = row.status === 'settled';
+    return { id: row.id, depositNumber: row.deposit_number, studentId: row.student_id, studentName: row.name, studentNumber: row.number, className: row.class_name, actorId: row.actor_id, principal: amount(row.principal), months: row.months, rate: amount(row.rate), expectedInterest: amount(row.expected_interest), total: amount(row.principal + row.expected_interest), ruleVersion: row.rule_version, createdAt: row.created_at, dueAt: row.due_at, settledAt: row.settled_at, status: settled ? 'settled' : 'active', settlementInProgress: !settled && row.due_at <= now, attempts: row.attempts, lastError: row.last_error };
   }
   detail(actor, id) {
     const row = this.db.prepare('SELECT d.*,s.name,s.number,s.class_name FROM deposits d JOIN students s ON s.id=d.student_id WHERE d.id=? AND d.school_id=?').get(id, actor.schoolId);
@@ -273,7 +274,7 @@ export class DepositService {
     }
     if (filters.status && !['active', 'pending', 'settled'].includes(filters.status)) fail('存款状态无效');
     const now = this.now();
-    if (filters.status === 'active') { where += " AND d.status='active' AND d.due_at>?"; args.push(now); }
+    if (filters.status === 'active') where += " AND d.status<>'settled'";
     if (filters.status === 'pending') { where += " AND d.status<>'settled' AND d.due_at<=?"; args.push(now); }
     if (filters.status === 'settled') where += " AND d.status='settled'";
     const page = filters.page === undefined || filters.page === '' ? 1 : Number(filters.page), pageSize = 10;
