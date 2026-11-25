@@ -39,6 +39,28 @@ export function dueDate(start, months) {
 }
 const iso = value => new Date(value).toISOString();
 const fingerprint = value => JSON.stringify(value);
+const cumulativeEarned = `(SELECT SUM(p.earned_delta) FROM ledger p
+  WHERE p.school_id=l.school_id AND p.student_id=l.student_id AND p.rowid<=l.rowid)`;
+const pointTransactionColumns = `l.*,s.name,s.number,s.class_name,${cumulativeEarned} AS cumulative,
+  (SELECT d.deposit_number FROM deposits d WHERE d.id=l.deposit_id AND d.student_id=l.student_id AND d.school_id=l.school_id) AS deposit_number`;
+const pointTransactionJoin = 'FROM ledger l JOIN students s ON s.id=l.student_id AND s.school_id=l.school_id';
+function pointTransaction(row) {
+  return {
+    id: row.id,
+    studentName: row.name,
+    studentNumber: row.number,
+    className: row.class_name,
+    kind: row.kind,
+    availableDelta: amount(row.available_delta),
+    lockedDelta: amount(row.locked_delta),
+    earnedDelta: amount(row.earned_delta),
+    cumulative: amount(row.cumulative),
+    availableAfter: amount(row.balance),
+    createdAt: row.created_at,
+    depositId: row.deposit_id,
+    depositNumber: row.deposit_number,
+  };
+}
 
 export class DepositService {
   constructor(filename = ':memory:', { clock = () => Date.now(), seed = true, DatabaseSync } = {}) {
@@ -59,6 +81,7 @@ export class DepositService {
       );
       CREATE TABLE IF NOT EXISTS requests (actor_id TEXT NOT NULL, request_key TEXT NOT NULL, fingerprint TEXT NOT NULL, deposit_id TEXT NOT NULL REFERENCES deposits(id), PRIMARY KEY(actor_id,request_key));
       CREATE TABLE IF NOT EXISTS ledger (id TEXT PRIMARY KEY, school_id TEXT NOT NULL, student_id TEXT NOT NULL, deposit_id TEXT, kind TEXT NOT NULL, available_delta INTEGER NOT NULL, locked_delta INTEGER NOT NULL, earned_delta INTEGER NOT NULL, balance INTEGER NOT NULL, created_at TEXT NOT NULL, UNIQUE(deposit_id,kind));
+      CREATE INDEX IF NOT EXISTS ledger_school_student ON ledger(school_id,student_id);
       CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, school_id TEXT NOT NULL, actor_id TEXT NOT NULL, event TEXT NOT NULL, detail TEXT NOT NULL, created_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, school_id TEXT NOT NULL, actor_id TEXT NOT NULL, event TEXT NOT NULL, detail TEXT NOT NULL, created_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY,value TEXT NOT NULL);
@@ -118,7 +141,7 @@ export class DepositService {
     const s = this.student(actor, id);
     const rank = this.db.prepare('SELECT COUNT(*)+1 n FROM students WHERE school_id=? AND earned>?').get(actor.schoolId, s.earned).n;
     const redeemed = this.db.prepare("SELECT COALESCE(SUM(CASE WHEN kind='opening' THEN MAX(earned_delta-available_delta,0) WHEN kind='debit' THEN -available_delta ELSE 0 END),0) total FROM ledger WHERE student_id=?").get(id).total;
-    return { id: s.id, name: s.name, number: s.number, className: s.class_name, available: amount(s.available), locked: amount(s.locked), earned: amount(s.earned), redeemed: amount(redeemed), interestPaid: amount(s.interest_paid), rank };
+    return { id: s.id, name: s.name, number: s.number, className: s.class_name, total: amount(s.available + s.locked), available: amount(s.available), locked: amount(s.locked), earned: amount(s.earned), redeemed: amount(redeemed), interestPaid: amount(s.interest_paid), rank };
   }
   pointHistory(actor, filters = {}) {
     this.student(actor, filters.studentId);
@@ -129,9 +152,64 @@ export class DepositService {
     if (period !== 'all') { where += ' AND l.created_at>=?'; args.push(iso(new Date(this.now()).getTime() - (period === 'week' ? 7 : 30) * 86400000)); }
     const total = this.db.prepare(`SELECT COUNT(*) total FROM ledger l WHERE ${where}`).get(...args).total;
     const page = Math.min(requestedPage, Math.max(1, Math.ceil(total / pageSize)));
-    const rows = this.db.prepare(`SELECT l.*,(SELECT SUM(p.earned_delta) FROM ledger p WHERE p.student_id=l.student_id AND p.rowid<=l.rowid) cumulative FROM ledger l WHERE ${where} ORDER BY l.created_at DESC,l.rowid DESC LIMIT ? OFFSET ?`).all(...args, pageSize, (page - 1) * pageSize);
+    const rows = this.db.prepare(`SELECT l.*,${cumulativeEarned} AS cumulative FROM ledger l WHERE ${where} ORDER BY l.created_at DESC,l.rowid DESC LIMIT ? OFFSET ?`).all(...args, pageSize, (page - 1) * pageSize);
     const titles = { opening: '历史积分', interest: '存款利息', evaluation: '德育评价' };
     return { items: rows.map(l => ({ id: l.id, title: titles[l.kind] || '积分获得', kind: l.kind, points: amount(l.earned_delta), cumulative: amount(l.cumulative), createdAt: l.created_at, depositId: l.deposit_id })), total, page, pageSize };
+  }
+  pointTransactions(actor, filters = {}) {
+    const { sql: scope, args } = this.scope(actor);
+    const conditions = [scope];
+    const { studentId, name, className, source, start, end, period = 'all' } = filters;
+    if (actor.role === 'parent' && !studentId) fail('请选择已绑定的学生', 403, 'FORBIDDEN');
+    if (studentId) {
+      this.student(actor, studentId);
+      conditions.push('s.id=?');
+      args.push(studentId);
+    }
+    if (name?.trim()) {
+      conditions.push('instr(s.name,?)>0');
+      args.push(name.trim());
+    }
+    if (className) {
+      conditions.push('s.class_name=?');
+      args.push(className);
+    }
+    if (source === 'bank') {
+      conditions.push("l.kind IN ('deposit','principal_return','interest')");
+    } else if (source) {
+      if (!['evaluation', 'debit', 'opening'].includes(source)) fail('积分变动来源无效');
+      conditions.push('l.kind=?');
+      args.push(source);
+    }
+    if (!['all', 'week', 'month'].includes(period)) fail('积分变动时间范围无效');
+    if (period !== 'all') {
+      conditions.push('l.created_at>=?');
+      args.push(iso(Date.parse(this.now()) - (period === 'week' ? 7 : 30) * DAY_MS));
+    }
+    for (const [value, inclusiveEnd] of [[start, false], [end, true]]) {
+      if (!value) continue;
+      const midnight = Date.parse(`${value}T00:00:00+08:00`);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(midnight) || localDate(midnight) !== value) fail('日期格式无效');
+      conditions.push(inclusiveEnd ? 'l.created_at<?' : 'l.created_at>=?');
+      args.push(iso(midnight + (inclusiveEnd ? DAY_MS : 0)));
+    }
+    if (start && end && start > end) fail('开始日期不得晚于结束日期');
+    const requestedPage = Number(filters.page || 1), pageSize = 10;
+    if (!Number.isSafeInteger(requestedPage) || requestedPage < 1 || requestedPage > 1_000_000) fail('分页参数无效');
+    const query = `${pointTransactionJoin} WHERE ${conditions.join(' AND ')}`;
+    const { total } = this.db.prepare(`SELECT COUNT(*) total ${query}`).get(...args);
+    const page = Math.min(requestedPage, Math.max(1, Math.ceil(total / pageSize)));
+    const rows = this.db.prepare(`
+      SELECT ${pointTransactionColumns}
+      ${query} ORDER BY l.created_at DESC,l.rowid DESC LIMIT ? OFFSET ?
+    `).all(...args, pageSize, (page - 1) * pageSize);
+    return { total, page, pageSize, items: rows.map(pointTransaction) };
+  }
+  pointTransactionDetail(actor, id) {
+    const { sql, args } = this.scope(actor);
+    const row = this.db.prepare(`SELECT ${pointTransactionColumns} ${pointTransactionJoin} WHERE l.id=? AND ${sql}`).get(id, ...args);
+    if (!row) fail('该积分记录不可查看', 404, 'NOT_FOUND');
+    return pointTransaction(row);
   }
   bootstrap(actor) {
     const { sql, args } = this.scope(actor);
@@ -253,7 +331,9 @@ export class DepositService {
   }
   decorate(row, now = this.now()) {
     const settled = row.status === 'settled';
-    const durationDays = (Date.parse(localDate(row.due_at)) - Date.parse(localDate(row.created_at))) / DAY_MS;
+    const durationDays = [1, 2, 3].includes(row.months)
+      ? TERM_DAYS[row.months]
+      : (Date.parse(localDate(row.due_at)) - Date.parse(localDate(row.created_at))) / DAY_MS;
     return { id: row.id, depositNumber: row.deposit_number, studentId: row.student_id, studentName: row.name, studentNumber: row.number, className: row.class_name, actorId: row.actor_id, principal: amount(row.principal), months: row.months, durationDays, rate: amount(row.rate), expectedInterest: amount(row.expected_interest), total: amount(row.principal + row.expected_interest), ruleVersion: row.rule_version, createdAt: row.created_at, dueAt: row.due_at, settledAt: row.settled_at, status: settled ? 'settled' : 'active', settlementInProgress: !settled && row.due_at <= now, attempts: row.attempts, lastError: row.last_error };
   }
   detail(actor, id) {

@@ -1,4 +1,4 @@
-import { BusinessError, DEMO_PROFILES, DepositService } from './core.mjs?v=06b853195c15';
+import { BusinessError, DEMO_PROFILES, DepositService } from './core.mjs?v=b6cf60b2b76c';
 import { workbook } from './xlsx.mjs?v=0d41d146a464';
 
 const storageKey = 'yyide.points-deposit-v1.sqlite';
@@ -84,6 +84,9 @@ function route(service, profiles, url, method, data) {
     if (path === '/api/session') return { actor, demo: true };
     if (path === '/api/bootstrap') return service.bootstrap(actor);
     if (path === '/api/point-history') return service.pointHistory(actor, data);
+    if (path === '/api/point-transactions') return service.pointTransactions(actor, data);
+    const pointDetail = /^\/api\/point-transactions\/([^/]+)$/.exec(path);
+    if (pointDetail) return service.pointTransactionDetail(actor, pointDetail[1]);
     if (path === '/api/deposits') return service.list(actor, data);
     if (path === '/api/logs') return service.logs(actor, data);
     if (path === '/api/export') return downloadWorkbook(service, actor, data);

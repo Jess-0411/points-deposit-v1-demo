@@ -45,6 +45,8 @@
     const emptyState = document.getElementById("emptyState");
     const toast = document.getElementById("toast");
     const recordSheet = document.getElementById("recordSheet");
+    const marketPrd = document.getElementById("marketPrd");
+    document.getElementById("openMarketPrd").addEventListener("click", () => marketPrd.showModal());
 
     function showToast(text) {
       toast.textContent = text;
