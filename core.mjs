@@ -12,6 +12,10 @@ export const DEMO_PROFILES = Object.freeze({
   otherSchool: { id: 'admin-b', name: '另一学校管理员', role: 'admin', schoolId: 'school-b' },
 });
 const MAX_UNITS = 1_000_000_000_000;
+const MAX_MONTHLY_RATE = 10_000;
+const DAY_MS = 86_400_000;
+const TERM_DAYS = Object.freeze({ 1: 30, 2: 60, 3: 90, 6: 180, 12: 365 });
+const canUseProduct = product => product.enabled && Object.hasOwn(TERM_DAYS, product.months) && product.rate <= MAX_MONTHLY_RATE;
 export function units(value, label = '积分') {
   const text = String(value ?? '').trim();
   if (!/^(0|[1-9]\d*)(\.\d{1,2})?$/.test(text)) fail(`${label}须为非负数，最多保留两位小数`);
@@ -28,11 +32,9 @@ export function interest(principal, rate, months) {
 }
 export const localDate = value => new Date(new Date(value).getTime() + 28_800_000).toISOString().slice(0, 10);
 export function dueDate(start, months) {
-  const date = new Date(new Date(start).getTime() + 28_800_000);
-  if (!Number.isSafeInteger(months) || months < 1) fail('存期须为正整数月');
-  const last = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months + 1, 0));
-  if (!Number.isFinite(last.getTime()) || last.getUTCFullYear() > 9999) fail('存期超出可支持日期范围');
-  const due = new Date(Date.UTC(last.getUTCFullYear(), last.getUTCMonth(), Math.min(date.getUTCDate(), last.getUTCDate())) - 28_800_000);
+  if (!Object.hasOwn(TERM_DAYS, months)) fail('存期只能选择1、2、3、6或12个月');
+  const due = new Date(Date.parse(`${localDate(start)}T00:00:00+08:00`) + TERM_DAYS[months] * DAY_MS);
+  if (!Number.isFinite(due.getTime()) || new Date(due.getTime() + 28_800_000).getUTCFullYear() > 9999) fail('存期超出可支持日期范围');
   return due.toISOString();
 }
 const iso = value => new Date(value).toISOString();
@@ -135,8 +137,11 @@ export class DepositService {
     const { sql, args } = this.scope(actor);
     const students = this.db.prepare(`SELECT s.* FROM students s WHERE ${sql} ORDER BY s.number`).all(...args).map(s => this.account(actor, s.id));
     const setting = this.db.prepare('SELECT * FROM settings WHERE school_id=?').get(actor.schoolId);
-    const products = this.db.prepare(`SELECT * FROM products WHERE school_id=? ${actor.role === 'parent' ? 'AND enabled=1' : ''} ORDER BY months`).all(actor.schoolId).map(p => ({ id: p.id, months: p.months, rate: amount(p.rate), enabled: !!p.enabled, revision: p.revision, ruleVersion: `${setting.version}:${p.revision}` }));
-    return { actor, now: this.now(), school: { id: setting.school_id, name: setting.name, enabled: !!setting.enabled, minimum: amount(setting.minimum), version: setting.version }, students, products };
+    const termOptions = Object.entries(TERM_DAYS).map(([months, durationDays]) => ({ months: Number(months), durationDays }));
+    const products = this.db.prepare('SELECT * FROM products WHERE school_id=? ORDER BY months').all(actor.schoolId)
+      .filter(p => Object.hasOwn(TERM_DAYS, p.months) && (actor.role !== 'parent' || canUseProduct(p)))
+      .map(p => ({ id: p.id, months: p.months, durationDays: TERM_DAYS[p.months], rate: amount(p.rate), enabled: !!canUseProduct(p), revision: p.revision, ruleVersion: `${setting.version}:${p.revision}` }));
+    return { actor, now: this.now(), school: { id: setting.school_id, name: setting.name, enabled: !!setting.enabled, minimum: amount(setting.minimum), version: setting.version }, students, products, termOptions };
   }
   updateSettings(actor, data) {
     this.admin(actor); const minimum = units(data.minimum, '最低起存额');
@@ -145,7 +150,7 @@ export class DepositService {
     return this.tx(() => {
       const old = this.db.prepare('SELECT * FROM settings WHERE school_id=?').get(actor.schoolId);
       if (data.version !== old.version) fail('配置已被更新，请刷新后重试', 409, 'STALE_CONFIG');
-      if (data.enabled && !this.db.prepare('SELECT id FROM products WHERE school_id=? AND enabled=1 LIMIT 1').get(actor.schoolId)) fail('请先启用至少一个存期档位');
+      if (data.enabled && !this.db.prepare('SELECT months,rate,enabled FROM products WHERE school_id=? AND enabled=1').all(actor.schoolId).some(canUseProduct)) fail('请先启用至少一个存期档位');
       this.db.prepare('UPDATE settings SET minimum=?,enabled=?,version=version+1 WHERE school_id=?').run(minimum, Number(data.enabled), actor.schoolId);
       this.audit(actor, 'settings_changed', { before: { minimum: old.minimum, enabled: old.enabled }, after: { minimum, enabled: data.enabled } });
       return this.bootstrap(actor);
@@ -153,8 +158,10 @@ export class DepositService {
   }
   saveProduct(actor, data) {
     this.admin(actor);
-    const months = Number(data.months); dueDate(this.now(), months);
+    const months = Number(data.months);
+    if (!Object.hasOwn(TERM_DAYS, months)) fail('存期只能选择1、2、3、6或12个月');
     const rate = units(data.rate, '月利率');
+    if (rate > MAX_MONTHLY_RATE) fail('月利率须在 0% 至 100% 之间');
     if (typeof data.enabled !== 'boolean') fail('档位状态无效');
     return this.tx(() => {
       const old = data.id ? this.db.prepare('SELECT * FROM products WHERE id=? AND school_id=?').get(data.id, actor.schoolId) : null;
@@ -175,13 +182,13 @@ export class DepositService {
     const setting = this.db.prepare('SELECT * FROM settings WHERE school_id=?').get(actor.schoolId);
     if (!setting.enabled) fail('学校暂未开放积分定期存款', 409, 'DISABLED');
     const product = this.db.prepare('SELECT * FROM products WHERE id=? AND school_id=? AND enabled=1').get(data.productId, actor.schoolId);
-    if (!product) fail('该档位已停用，请重新选择', 409, 'DISABLED');
+    if (!product || !canUseProduct(product)) fail('该档位已停用，请重新选择', 409, 'DISABLED');
     const principal = units(data.principal, '存入积分');
     if (principal < setting.minimum) fail(`最低起存额为${amount(setting.minimum)}积分`);
     if (principal > student.available) fail('可用积分不足，定期本金不可再次存入', 409, 'INSUFFICIENT_BALANCE');
     const expectedInterest = interest(principal, product.rate, product.months);
     if (student.available + student.locked + expectedInterest > MAX_UNITS || student.earned + expectedInterest > MAX_UNITS) fail('本息合计超出账户可支持范围');
-    return { studentId: student.id, productId: product.id, principal: amount(principal), months: product.months, rate: amount(product.rate), expectedInterest: amount(expectedInterest), total: amount(principal + expectedInterest), dueAt: dueDate(start, product.months), ruleVersion: `${setting.version}:${product.revision}`, quotedAt: start };
+    return { studentId: student.id, productId: product.id, principal: amount(principal), months: product.months, durationDays: TERM_DAYS[product.months], rate: amount(product.rate), expectedInterest: amount(expectedInterest), total: amount(principal + expectedInterest), dueAt: dueDate(start, product.months), ruleVersion: `${setting.version}:${product.revision}`, quotedAt: start };
   }
   createDeposit(actor, data) {
     if (typeof data.requestKey !== 'string' || !/^[a-zA-Z0-9_-]{8,120}$/.test(data.requestKey)) fail('缺少有效的请求标识');
@@ -246,7 +253,8 @@ export class DepositService {
   }
   decorate(row, now = this.now()) {
     const settled = row.status === 'settled';
-    return { id: row.id, depositNumber: row.deposit_number, studentId: row.student_id, studentName: row.name, studentNumber: row.number, className: row.class_name, actorId: row.actor_id, principal: amount(row.principal), months: row.months, rate: amount(row.rate), expectedInterest: amount(row.expected_interest), total: amount(row.principal + row.expected_interest), ruleVersion: row.rule_version, createdAt: row.created_at, dueAt: row.due_at, settledAt: row.settled_at, status: settled ? 'settled' : 'active', settlementInProgress: !settled && row.due_at <= now, attempts: row.attempts, lastError: row.last_error };
+    const durationDays = (Date.parse(localDate(row.due_at)) - Date.parse(localDate(row.created_at))) / DAY_MS;
+    return { id: row.id, depositNumber: row.deposit_number, studentId: row.student_id, studentName: row.name, studentNumber: row.number, className: row.class_name, actorId: row.actor_id, principal: amount(row.principal), months: row.months, durationDays, rate: amount(row.rate), expectedInterest: amount(row.expected_interest), total: amount(row.principal + row.expected_interest), ruleVersion: row.rule_version, createdAt: row.created_at, dueAt: row.due_at, settledAt: row.settled_at, status: settled ? 'settled' : 'active', settlementInProgress: !settled && row.due_at <= now, attempts: row.attempts, lastError: row.last_error };
   }
   detail(actor, id) {
     const row = this.db.prepare('SELECT d.*,s.name,s.number,s.class_name FROM deposits d JOIN students s ON s.id=d.student_id WHERE d.id=? AND d.school_id=?').get(id, actor.schoolId);
