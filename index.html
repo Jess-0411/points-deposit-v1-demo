@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#16b88a">
   <meta name="description" content="评价管理系统校园银行，支持学校规则配置、家长主动存入与到期自动结算。">
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./styles.css?v=d89a7044550f">
+  <link rel="stylesheet" href="./styles.css?v=7f36adfd09f2">
   <link rel="stylesheet" href="./original-wallet.css?v=9338323fba7d">
   <title>校园银行 · 评价管理系统</title>
 </head>
@@ -14,6 +14,16 @@
   <div id="app"><div class="loading">正在读取积分账户…</div></div>
   <div id="modal-root"></div>
   <div id="toast" role="status" aria-live="polite"></div>
+
+  <template id="product-disable-template">
+    <div id="product-disable-popover" class="product-disable-popover" popover="auto" role="dialog" aria-labelledby="product-disable-question">
+      <div class="product-disable-question"><span aria-hidden="true">!</span><p id="product-disable-question">确定停用该档位？</p></div>
+      <div class="product-disable-actions">
+        <button type="button" class="btn" data-action="cancel-product-disable" autofocus>取消</button>
+        <button type="button" class="btn primary" data-action="confirm-product-disable">确定</button>
+      </div>
+    </div>
+  </template>
 
   <template id="prd-page-bank">
     <p id="prd-page-title" hidden>家长端 · 校园银行</p>
@@ -215,7 +225,8 @@
         <thead><tr><th>功能模块</th><th>功能点</th><th>需求描述</th><th>优先级</th><th>备注说明</th></tr></thead>
         <tbody>
           <tr><td>基础设置</td><td>开关和起存额</td><td>管理员保存功能开关、最低起存额和当前版本。</td><td>P0</td><td>按学校生效。</td></tr>
-          <tr><td>档位配置</td><td>新增和编辑</td><td>新增未配置档位，编辑已有档位的月利率和启用状态。</td><td>P0</td><td>既有档位的存期固定。</td></tr>
+          <tr><td>档位配置</td><td>新增和编辑</td><td>新增未配置档位。编辑弹窗展示只读存期，修改月利率。</td><td>P0</td><td>月利率输入框右侧显示百分号。</td></tr>
+          <tr><td>档位配置</td><td>启用和停用</td><td>已启用的行显示「停用」，点击后在按钮旁确认。已停用的行显示「启用」，点击后保存状态。</td><td>P0</td><td>取消停用时保留当前状态。</td></tr>
           <tr><td>档位配置</td><td>删除</td><td>管理员可以删除任意已停用档位。确认后从配置列表移除，该存期可再次新增。</td><td>P0</td><td>含默认档位。归档原档位以保留历史订单关联。</td></tr>
           <tr><td>档位列表</td><td>收益示例</td><td>显示整期收益率和以 100 积分为本金的到期利息。</td><td>P0</td><td>统一按月单利。</td></tr>
         </tbody>
@@ -224,7 +235,7 @@
       <h4 id="prd-rule-settings">基础设置与档位校验</h4>
       <ul>
         <li>各校独立配置功能开关、最低起存额和存期档位。管理员可保存，班主任只读。最低起存额默认 1.00，最小 0.01 积分。启用功能时至少有一档已启用。</li>
-        <li>支持 1 个月（30 天）、2 个月（60 天）、3 个月（90 天）、6 个月（180 天）、12 个月（365 天）。默认配置前三档，新增时只可选择尚未配置的档位。已有档位可修改月利率和启用状态。月利率含 0% 和 100% 两端，最多两位小数。</li>
+        <li>支持 1 个月（30 天）、2 个月（60 天）、3 个月（90 天）、6 个月（180 天）、12 个月（365 天）。默认配置前三档，新增时只可选择尚未配置的档位。编辑已有档位时只修改月利率，启用状态由列表操作控制。月利率含 0% 和 100% 两端，最多两位小数。</li>
         <li>旧配置中五档之外的档位停止受理新存款。固定档位的旧利率超出范围时显示为停用，管理员修正后可启用。学校开启存款功能至少需要一档符合新规则的启用档位。</li>
         <li>保存基础设置或档位时，校验对应的当前版本并递增版本。过时版本要求刷新。配置修改适用于后续存款，已有订单继续使用各自的配置快照。</li>
         <li>选择「删除」并确认后，校验同校管理员权限、档位版本及当前停用状态。成功后从当前配置中移除该档位。再次新增相同存期时，沿用原档位标识，按本次填写的配置保存并递增版本。</li>
@@ -240,7 +251,7 @@
           <tr><th scope="row">整期收益率</th><td>月利率 × 存期月数，按百分数保留两位小数。例如 2 个月（60 天）、月利率 1.50%，整期收益率为 3.00%。</td></tr>
           <tr><th scope="row">100积分到期利息</th><td>100 积分 ×（月利率输入值 ÷ 100）× 存期月数，使用月单利，最终四舍五入至两位小数。上例为 3.00 积分。</td></tr>
           <tr><th scope="row">状态</th><td>读取档位自己的 <code>enabled</code>，真显示「已启用」，假显示「已停用」。实际允许家长存入还须学校功能开关为开启。</td></tr>
-          <tr><th scope="row">操作</th><td>管理员可编辑。<code>canDelete</code> 为真时显示「删除」。班主任显示「—」。</td></tr>
+          <tr><th scope="row">操作</th><td>管理员可编辑。已启用时显示「停用」并在确认后更新，已停用时显示「启用」，<code>canDelete</code> 为真时显示「删除」。班主任显示「—」。</td></tr>
         </tbody>
       </table>
       <p>基础设置、档位分别通过 <code>POST /api/settings</code> 和 <code>POST /api/products</code> 保存。<code>POST /api/products/delete</code> 提交档位 ID <code>id</code> 和版本 <code>revision</code>，删除成功写入 <code>product_deleted</code> 审计。</p>
@@ -298,6 +309,6 @@
   </template>
 
   <script src="./vendor/sql-wasm.js"></script>
-  <script src="./app.js?v=8eecbc1c36c8" type="module"></script>
+  <script src="./app.js?v=7fc81f88a38e" type="module"></script>
 </body>
 </html>
