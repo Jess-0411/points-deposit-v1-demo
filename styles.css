@@ -197,3 +197,7 @@
 .point-records-table .point-select{width:48px;text-align:center}
 .point-select input{accent-color:var(--green);margin:0;vertical-align:middle}
 .point-face img{display:block;width:40px;height:40px;object-fit:cover;border:1px solid var(--line)}
+.text-btn.product-delete{color:#af3838;margin-inline-start:12px}
+.btn.danger{background:#b83d3d;border-color:#b83d3d;color:#fff}
+.btn.danger:hover{background:#a33030;border-color:#a33030}
+.product-delete-copy{line-height:1.65;font-size:14px}

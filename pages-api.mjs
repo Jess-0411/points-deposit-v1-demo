@@ -1,4 +1,4 @@
-import { BusinessError, DEMO_PROFILES, DepositService } from './core.mjs?v=b6cf60b2b76c';
+import { BusinessError, DEMO_PROFILES, DepositService } from './core.mjs?v=f4e8c3e5e5b3';
 import { workbook } from './xlsx.mjs?v=0d41d146a464';
 
 const storageKey = 'yyide.points-deposit-v1.sqlite';
@@ -101,6 +101,7 @@ function route(service, profiles, url, method, data) {
     }
     if (path === '/api/settings') return service.updateSettings(actor, data);
     if (path === '/api/products') return service.saveProduct(actor, data);
+    if (path === '/api/products/delete') return service.deleteProduct(actor, data);
     if (path === '/api/quote') return service.quote(actor, data);
     if (path === '/api/deposits') return Response.json(service.createDeposit(actor, data), { status: 201 });
     if (path === '/api/demo/debit') return service.debit(actor, data.studentId, data.principal);

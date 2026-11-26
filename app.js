@@ -1,4 +1,4 @@
-import { demoFetch } from './pages-api.mjs?v=c7c37df60bd4';
+import { demoFetch } from './pages-api.mjs?v=4d19bdc717d6';
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 const money = value => Number(value || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -156,7 +156,7 @@ function syncPointSelection(table) {
 }
 function adminRules() {
   const { school, products, actor } = state.bootstrap, readonly = actor.role !== 'admin';
-  return `<div class="rule-notice">${icon('shield')}<div><strong>已存入记录按原规则结算</strong><span>调息、调整起存额或停用功能仅影响后续存入，不改变已有存款的本金、利率及到期时间。</span></div></div><section class="settings-section"><div class="section-heading"><h2>基础设置</h2><span>学校独立生效</span></div><form id="settings-form" novalidate><div class="setting-row"><div><strong>开放定期存款</strong><p>关闭后停止新存入，已有存款仍可查询并正常到期结算。</p></div><label class="switch"><input type="checkbox" name="enabled" aria-label="开放定期存款" ${school.enabled ? 'checked' : ''} ${readonly ? 'disabled' : ''}><span></span></label></div><div class="setting-row"><div><strong>最低起存额</strong><p>所有存期档位统一使用此起存额，允许多笔独立存入。</p></div><label class="suffix-field"><input name="minimum" aria-label="最低起存额" inputmode="decimal" value="${school.minimum}" ${readonly ? 'disabled' : ''}><span>积分</span></label></div><div class="setting-row plain"><div class="setting-tags"><span>按月单利</span><span>按固定天数到期</span><span>到期日 00:00 自动到账</span><span>保留两位小数</span></div>${!readonly ? '<button class="btn primary" type="submit">保存基础设置</button>' : '<span class="subtle">当前账号仅可查看</span>'}</div></form></section><section class="settings-section"><div class="section-heading"><div><h2>存期与月利率</h2><span>月利率 × 存期月数 = 整期收益率</span></div>${!readonly ? `<button class="btn primary" data-action="product-new" ${products.length === state.bootstrap.termOptions.length ? 'disabled title="所有存期档位均已配置"' : ''}>${icon('plus')}新增档位</button>` : ''}</div><div class="table-wrap"><table><thead><tr><th>存期</th><th>月利率</th><th>整期收益率</th><th>100积分到期利息</th><th>状态</th><th>操作</th></tr></thead><tbody>${products.map(p => `<tr><td><strong>${termLabel(p)}</strong></td><td class="positive">${p.rate}%</td><td>${(Number(p.rate) * p.months).toFixed(2)}%</td><td>${money(Number(p.rate) * p.months)} 积分</td><td><span class="badge ${p.enabled ? 'active' : 'disabled'}"><i></i>${p.enabled ? '已启用' : '已停用'}</span></td><td>${!readonly ? `<button class="text-btn" data-action="product-edit" data-id="${esc(p.id)}">编辑</button>` : '—'}</td></tr>`).join('')}</tbody></table></div><p class="formula-note">示例：100 积分 × 1.50% × 2（2个月档，60天）＝ 3.00 积分利息。存期内不发放利息，不计复利。</p></section>`;
+  return `<div class="rule-notice">${icon('shield')}<div><strong>已存入记录按原规则结算</strong><span>调息、调整起存额或停用功能仅影响后续存入，不改变已有存款的本金、利率及到期时间。</span></div></div><section class="settings-section"><div class="section-heading"><h2>基础设置</h2><span>学校独立生效</span></div><form id="settings-form" novalidate><div class="setting-row"><div><strong>开放定期存款</strong><p>关闭后停止新存入，已有存款仍可查询并正常到期结算。</p></div><label class="switch"><input type="checkbox" name="enabled" aria-label="开放定期存款" ${school.enabled ? 'checked' : ''} ${readonly ? 'disabled' : ''}><span></span></label></div><div class="setting-row"><div><strong>最低起存额</strong><p>所有存期档位统一使用此起存额，允许多笔独立存入。</p></div><label class="suffix-field"><input name="minimum" aria-label="最低起存额" inputmode="decimal" value="${school.minimum}" ${readonly ? 'disabled' : ''}><span>积分</span></label></div><div class="setting-row plain"><div class="setting-tags"><span>按月单利</span><span>按固定天数到期</span><span>到期日 00:00 自动到账</span><span>保留两位小数</span></div>${!readonly ? '<button class="btn primary" type="submit">保存基础设置</button>' : '<span class="subtle">当前账号仅可查看</span>'}</div></form></section><section class="settings-section"><div class="section-heading"><div><h2>存期与月利率</h2><span>月利率 × 存期月数 = 整期收益率</span></div>${!readonly ? `<button class="btn primary" data-action="product-new" ${products.length === state.bootstrap.termOptions.length ? 'disabled title="所有存期档位均已配置"' : ''}>${icon('plus')}新增档位</button>` : ''}</div><div class="table-wrap"><table><thead><tr><th>存期</th><th>月利率</th><th>整期收益率</th><th>100积分到期利息</th><th>状态</th><th>操作</th></tr></thead><tbody>${products.map(p => `<tr><td><strong>${termLabel(p)}</strong></td><td class="positive">${p.rate}%</td><td>${(Number(p.rate) * p.months).toFixed(2)}%</td><td>${money(Number(p.rate) * p.months)} 积分</td><td><span class="badge ${p.enabled ? 'active' : 'disabled'}"><i></i>${p.enabled ? '已启用' : '已停用'}</span></td><td>${!readonly ? `<button class="text-btn" data-action="product-edit" data-id="${esc(p.id)}">编辑</button>${p.canDelete ? `<button class="text-btn product-delete" data-action="product-delete" data-id="${esc(p.id)}">删除</button>` : ''}` : '—'}</td></tr>`).join('')}</tbody></table></div><p class="formula-note">示例：100 积分 × 1.50% × 2（2个月档，60天）＝ 3.00 积分利息。存期内不发放利息，不计复利。</p></section>`;
 }
 function empty(title, sub = '') { return `<div class="empty-state">${icon('bank')}<strong>${esc(title)}</strong><span>${esc(sub)}</span></div>`; }
 function pagination(r, action = 'page') { const pages = Math.max(1, Math.ceil(r.total / r.pageSize)); return `<div class="pagination"><span>共 ${r.total} 条</span><button class="btn" data-action="${action}" data-page="${r.page - 1}" ${r.page <= 1 ? 'disabled' : ''}>上一页</button><span class="page-current">${r.page}</span><button class="btn" data-action="${action}" data-page="${r.page + 1}" ${r.page >= pages ? 'disabled' : ''}>下一页</button><span>${r.pageSize} 条 / 页</span></div>`; }
@@ -397,6 +397,32 @@ async function action(button) {
   if (a === 'mobile-help') return modal('校园银行规则', `<div class="help-text"><p>1. 家长为当前绑定学生主动存入，允许多笔独立存款。</p><p>2. 到期利息 = 本金 × 月利率 × 存期月数，最终四舍五入保留两位小数。</p><p>3. 本金存期内不可使用，不支持提前取出。按北京时间存入日期加固定天数，在到期日 00:00 自动结算。</p><p>4. 1个月30天，2个月60天，3个月90天，6个月180天，12个月365天。周末及假期正常结算。</p><p>5. 后续调息、调整起存额及停用不改变已有存款的约定。</p><p>6. 已到账利息计入个人积分总额及排名；本金存入和返还不重复计入。</p></div><footer class="modal-actions"><button class="btn primary" data-action="close-modal">我已了解</button></footer>`, { mobile: true });
   if (a === 'product-new') return showProduct();
   if (a === 'product-edit') return showProduct(button.dataset.id);
+  if (a === 'product-delete') {
+    const product = state.bootstrap.products.find(p => p.id === button.dataset.id && p.canDelete);
+    if (!product) return toast('档位状态已变更，请刷新后重试', true);
+    state.modal = { type: 'product-delete', product };
+    return modal('删除存期档位', `
+      <p class="product-delete-copy">删除「${termLabel(product)}」档位后，可重新新增该存期。已有存款继续按原约定结算。</p>
+      <p id="form-error" role="alert" class="form-error"></p>
+      <footer class="modal-actions"><button type="button" class="btn" data-action="close-modal" autofocus>取消</button><button type="button" class="btn danger" data-action="confirm-product-delete">确认删除</button></footer>`, { trigger: button });
+  }
+  if (a === 'confirm-product-delete') {
+    const { id, revision } = state.modal.product;
+    try { await api('/products/delete', { id, revision }); }
+    catch (error) {
+      if (['STALE_CONFIG', 'NOT_FOUND', 'PRODUCT_ENABLED'].includes(error.code)) {
+        closeModal();
+        await load();
+        return toast(error.message, true);
+      }
+      $('#form-error').textContent = error.message;
+      return;
+    }
+    closeModal();
+    await load();
+    $('[data-action="product-new"]')?.focus();
+    return toast('档位已删除');
+  }
   if (a === 'detail') return showDetail(button.dataset.id);
   if (a === 'advance') { const failOnce = $('#fail-once')?.checked || false; const result = await api('/demo/advance', { studentId: state.view === 'mobile' ? state.studentId : undefined, failOnce }); await load(); return toast(result.results.some(r => !r.success) ? '已模拟结算失败，再次跳转可验证重试' : '已跳转演示时间，到期本息已自动结算'); }
   if (a === 'debit') return modal('模拟消费扣减', `<p class="subtle">仅对本地虚构账户执行。此操作用于验证定期本金无法被消费。</p><form id="debit-form" novalidate><label class="form-field">学生<select name="studentId">${state.bootstrap.students.map(s => `<option value="${s.id}">${esc(s.name)} · 可用${s.available} / 锁定${s.locked}</option>`).join('')}</select></label><label class="form-field">消费积分<input name="principal" inputmode="decimal" placeholder="请输入扣减积分"></label><p id="form-error" class="form-error" role="alert"></p><footer class="modal-actions"><button type="button" class="btn" data-action="close-modal">取消</button><button class="btn primary" type="submit">执行模拟扣减</button></footer></form>`);

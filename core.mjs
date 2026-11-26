@@ -15,6 +15,7 @@ const MAX_UNITS = 1_000_000_000_000;
 const MAX_MONTHLY_RATE = 10_000;
 const DAY_MS = 86_400_000;
 const TERM_DAYS = Object.freeze({ 1: 30, 2: 60, 3: 90, 6: 180, 12: 365 });
+const DEFAULT_PRODUCT_RATES = Object.freeze({ 1: 100, 2: 150, 3: 200 });
 const canUseProduct = product => product.enabled && Object.hasOwn(TERM_DAYS, product.months) && product.rate <= MAX_MONTHLY_RATE;
 export function units(value, label = '积分') {
   const text = String(value ?? '').trim();
@@ -68,7 +69,7 @@ export class DepositService {
     this.db = new DatabaseSync(filename);
     this.db.exec(`PRAGMA foreign_keys=ON; PRAGMA journal_mode=MEMORY; PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS settings (school_id TEXT PRIMARY KEY, name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 0, minimum INTEGER NOT NULL DEFAULT 100 CHECK(minimum>0), version INTEGER NOT NULL DEFAULT 1);
-      CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, school_id TEXT NOT NULL REFERENCES settings(school_id), months INTEGER NOT NULL CHECK(months>0), rate INTEGER NOT NULL CHECK(rate>=0), enabled INTEGER NOT NULL DEFAULT 0, revision INTEGER NOT NULL DEFAULT 1, UNIQUE(school_id,months));
+      CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, school_id TEXT NOT NULL REFERENCES settings(school_id), months INTEGER NOT NULL CHECK(months>0), rate INTEGER NOT NULL CHECK(rate>=0), enabled INTEGER NOT NULL DEFAULT 0, revision INTEGER NOT NULL DEFAULT 1, deleted_at TEXT, UNIQUE(school_id,months));
       CREATE TABLE IF NOT EXISTS students (id TEXT PRIMARY KEY, school_id TEXT NOT NULL REFERENCES settings(school_id), number TEXT NOT NULL, name TEXT NOT NULL, class_name TEXT NOT NULL, available INTEGER NOT NULL CHECK(available>=0), locked INTEGER NOT NULL DEFAULT 0 CHECK(locked>=0), earned INTEGER NOT NULL, interest_paid INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS deposits (id TEXT PRIMARY KEY, school_id TEXT NOT NULL REFERENCES settings(school_id), student_id TEXT NOT NULL REFERENCES students(id), actor_id TEXT NOT NULL, product_id TEXT NOT NULL REFERENCES products(id), months INTEGER NOT NULL, rate INTEGER NOT NULL, principal INTEGER NOT NULL CHECK(principal>0), expected_interest INTEGER NOT NULL, rule_version TEXT NOT NULL, created_at TEXT NOT NULL, due_at TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('active','pending','settled')), settled_at TEXT, attempts INTEGER NOT NULL DEFAULT 0, retry_at TEXT, last_error TEXT);
       CREATE INDEX IF NOT EXISTS deposits_due ON deposits(status,due_at);
@@ -86,6 +87,10 @@ export class DepositService {
       CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, school_id TEXT NOT NULL, actor_id TEXT NOT NULL, event TEXT NOT NULL, detail TEXT NOT NULL, created_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY,value TEXT NOT NULL);
       INSERT OR IGNORE INTO meta VALUES('offset','0');`);
+    const hasProductDeletion = () => this.db.prepare("SELECT 1 FROM pragma_table_info('products') WHERE name='deleted_at'").get();
+    if (!hasProductDeletion()) this.tx(() => {
+      if (!hasProductDeletion()) this.db.prepare('ALTER TABLE products ADD COLUMN deleted_at TEXT').run();
+    });
     if (seed && !this.db.prepare('SELECT 1 FROM settings LIMIT 1').get()) this.seed();
     this.ensureDepositNumbers();
   }
@@ -216,9 +221,9 @@ export class DepositService {
     const students = this.db.prepare(`SELECT s.* FROM students s WHERE ${sql} ORDER BY s.number`).all(...args).map(s => this.account(actor, s.id));
     const setting = this.db.prepare('SELECT * FROM settings WHERE school_id=?').get(actor.schoolId);
     const termOptions = Object.entries(TERM_DAYS).map(([months, durationDays]) => ({ months: Number(months), durationDays }));
-    const products = this.db.prepare('SELECT * FROM products WHERE school_id=? ORDER BY months').all(actor.schoolId)
+    const products = this.db.prepare('SELECT * FROM products WHERE school_id=? AND deleted_at IS NULL ORDER BY months').all(actor.schoolId)
       .filter(p => Object.hasOwn(TERM_DAYS, p.months) && (actor.role !== 'parent' || canUseProduct(p)))
-      .map(p => ({ id: p.id, months: p.months, durationDays: TERM_DAYS[p.months], rate: amount(p.rate), enabled: !!canUseProduct(p), revision: p.revision, ruleVersion: `${setting.version}:${p.revision}` }));
+      .map(p => ({ id: p.id, months: p.months, durationDays: TERM_DAYS[p.months], rate: amount(p.rate), enabled: !!canUseProduct(p), revision: p.revision, ruleVersion: `${setting.version}:${p.revision}`, canDelete: actor.role === 'admin' && !canUseProduct(p) }));
     return { actor, now: this.now(), school: { id: setting.school_id, name: setting.name, enabled: !!setting.enabled, minimum: amount(setting.minimum), version: setting.version }, students, products, termOptions };
   }
   updateSettings(actor, data) {
@@ -228,7 +233,7 @@ export class DepositService {
     return this.tx(() => {
       const old = this.db.prepare('SELECT * FROM settings WHERE school_id=?').get(actor.schoolId);
       if (data.version !== old.version) fail('配置已被更新，请刷新后重试', 409, 'STALE_CONFIG');
-      if (data.enabled && !this.db.prepare('SELECT months,rate,enabled FROM products WHERE school_id=? AND enabled=1').all(actor.schoolId).some(canUseProduct)) fail('请先启用至少一个存期档位');
+      if (data.enabled && !this.db.prepare('SELECT months,rate,enabled FROM products WHERE school_id=? AND deleted_at IS NULL AND enabled=1').all(actor.schoolId).some(canUseProduct)) fail('请先启用至少一个存期档位');
       this.db.prepare('UPDATE settings SET minimum=?,enabled=?,version=version+1 WHERE school_id=?').run(minimum, Number(data.enabled), actor.schoolId);
       this.audit(actor, 'settings_changed', { before: { minimum: old.minimum, enabled: old.enabled }, after: { minimum, enabled: data.enabled } });
       return this.bootstrap(actor);
@@ -242,15 +247,32 @@ export class DepositService {
     if (rate > MAX_MONTHLY_RATE) fail('月利率须在 0% 至 100% 之间');
     if (typeof data.enabled !== 'boolean') fail('档位状态无效');
     return this.tx(() => {
-      const old = data.id ? this.db.prepare('SELECT * FROM products WHERE id=? AND school_id=?').get(data.id, actor.schoolId) : null;
-      if (data.id && !old) fail('档位不存在', 404);
-      if (old && data.revision !== old.revision) fail('档位已被更新，请刷新后重试', 409, 'STALE_CONFIG');
-      if (this.db.prepare('SELECT id FROM products WHERE school_id=? AND months=? AND id<>?').get(actor.schoolId, months, data.id || '')) fail('该存期档位已存在，请编辑已有档位');
-      if (old && months !== old.months) fail('已有档位不可修改存期，请新增档位');
-      const id = old?.id || randomUUID();
-      if (old) this.db.prepare('UPDATE products SET rate=?,enabled=?,revision=revision+1 WHERE id=?').run(rate, Number(data.enabled), id);
+      const editing = !!data.id;
+      const previous = editing
+        ? this.db.prepare('SELECT * FROM products WHERE id=? AND school_id=? AND deleted_at IS NULL').get(data.id, actor.schoolId)
+        : this.db.prepare('SELECT * FROM products WHERE school_id=? AND months=?').get(actor.schoolId, months);
+      if (editing) {
+        if (!previous) fail('档位不存在', 404);
+        if (data.revision !== previous.revision) fail('档位已被更新，请刷新后重试', 409, 'STALE_CONFIG');
+        if (months !== previous.months) fail('已有档位不可修改存期，请新增档位');
+      } else if (previous && !previous.deleted_at) fail('该存期档位已存在，请编辑已有档位');
+      const id = previous?.id || randomUUID();
+      if (previous) this.db.prepare('UPDATE products SET rate=?,enabled=?,deleted_at=NULL,revision=revision+1 WHERE id=?').run(rate, Number(data.enabled), id);
       else this.db.prepare('INSERT INTO products(id,school_id,months,rate,enabled) VALUES(?,?,?,?,?)').run(id, actor.schoolId, months, rate, Number(data.enabled));
-      this.audit(actor, old ? 'product_changed' : 'product_created', { productId: id, months, rate, enabled: data.enabled, previousRate: old?.rate });
+      this.audit(actor, editing ? 'product_changed' : 'product_created', { productId: id, months, rate, enabled: data.enabled, previousRate: previous?.rate });
+      return this.bootstrap(actor);
+    });
+  }
+  deleteProduct(actor, { id, revision }) {
+    this.admin(actor);
+    if (typeof id !== 'string' || !id) fail('缺少档位标识');
+    return this.tx(() => {
+      const product = this.db.prepare('SELECT * FROM products WHERE id=? AND school_id=? AND deleted_at IS NULL').get(id, actor.schoolId);
+      if (!product || !Object.hasOwn(TERM_DAYS, product.months)) fail('档位不存在', 404, 'NOT_FOUND');
+      if (revision !== product.revision) fail('档位已被更新，请刷新后重试', 409, 'STALE_CONFIG');
+      if (canUseProduct(product)) fail('请先停用该档位', 409, 'PRODUCT_ENABLED');
+      this.db.prepare('UPDATE products SET enabled=0,deleted_at=?,revision=revision+1 WHERE id=?').run(this.now(), id);
+      this.audit(actor, 'product_deleted', { productId: id, months: product.months, revision: product.revision });
       return this.bootstrap(actor);
     });
   }
@@ -259,7 +281,7 @@ export class DepositService {
     const student = this.student(actor, data.studentId);
     const setting = this.db.prepare('SELECT * FROM settings WHERE school_id=?').get(actor.schoolId);
     if (!setting.enabled) fail('学校暂未开放积分定期存款', 409, 'DISABLED');
-    const product = this.db.prepare('SELECT * FROM products WHERE id=? AND school_id=? AND enabled=1').get(data.productId, actor.schoolId);
+    const product = this.db.prepare('SELECT * FROM products WHERE id=? AND school_id=? AND deleted_at IS NULL AND enabled=1').get(data.productId, actor.schoolId);
     if (!product || !canUseProduct(product)) fail('该档位已停用，请重新选择', 409, 'DISABLED');
     const principal = units(data.principal, '存入积分');
     if (principal < setting.minimum) fail(`最低起存额为${amount(setting.minimum)}积分`);
@@ -413,7 +435,7 @@ export class DepositService {
     this.tx(() => {
       this.db.prepare('INSERT INTO settings(school_id,name,enabled) VALUES(?,?,?)').run('school-a', '一德演示小学', 1);
       this.db.prepare('INSERT INTO settings(school_id,name,enabled) VALUES(?,?,?)').run('school-b', '另一所演示学校', 0);
-      for (const school of ['school-a', 'school-b']) for (const [months, rate] of [[1, 100], [2, 150], [3, 200]]) this.db.prepare('INSERT INTO products(id,school_id,months,rate,enabled) VALUES(?,?,?,?,?)').run(`${school}-p${months}`, school, months, rate, Number(school === 'school-a'));
+      for (const school of ['school-a', 'school-b']) for (const [months, rate] of Object.entries(DEFAULT_PRODUCT_RATES)) this.db.prepare('INSERT INTO products(id,school_id,months,rate,enabled) VALUES(?,?,?,?,?)').run(`${school}-p${months}`, school, Number(months), rate, Number(school === 'school-a'));
       const names = ['林小满', '林知夏', '陈星宇', '周沐阳', '许安宁', '沈书言', '苏予安', '江一诺', '叶嘉禾', '陆明轩', '宋可欣', '顾星辰'];
       names.forEach((name, index) => {
         const id = `s${String(index + 1).padStart(2, '0')}`, className = `四年级（${Math.floor(index / 4) + 1}）班`, available = 185300 - index * 5000;
